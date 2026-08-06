@@ -72,8 +72,15 @@ export class FileClassSchemaModal extends Modal {
 		});
 	}
 
+	/**
+	 * What a re-render must react to: not just the rows at this level (`ownFields`),
+	 * but the whole class's fields — the breadcrumb trail is built from ancestor-group
+	 * names (`allFields` → `pathFieldNames`), so keying on `ownFields` alone skipped the
+	 * re-render when an ancestor group was renamed and left a stale crumb. `allFields`
+	 * is scoped to this class, so unrelated fileClasses still cause no churn.
+	 */
 	private fieldsSignature(): string {
-		return JSON.stringify(this.ownFields());
+		return JSON.stringify(this.allFields());
 	}
 
 	onClose(): void {
