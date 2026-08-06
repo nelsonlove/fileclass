@@ -280,12 +280,64 @@ describe("repairing a base generated before its class was mapped", () => {
 	});
 
 	it("recognizes its own filters and nothing else", () => {
-		const scope = { alias: "fileClass", name: "A", folders: ["F"] };
+		const scope = { alias: "fileClass", name: "A", folders: ["F"], tags: ["a"] };
 		expect(isGeneratedScopeFilter({ and: ['list(fileClass).contains("A")'] }, scope)).toBe(true);
 		expect(isGeneratedScopeFilter({ and: [{ or: ['list(fileClass).contains("A")', 'file.hasTag("a")'] }] }, scope)).toBe(true);
 		expect(isGeneratedScopeFilter({ and: [{ or: ['list(fileClass).contains("A")', 'rating > 3'] }] }, scope)).toBe(false);
 		expect(isGeneratedScopeFilter({ and: ['list(fileClass).contains("Other")'] }, scope)).toBe(false);
 		expect(isGeneratedScopeFilter({ or: ['list(fileClass).contains("A")'] }, scope)).toBe(false);
+	});
+
+	it("leaves a hand-added predicate inside the or-group alone (shape-preserving edit)", () => {
+		// The user adds file.inFolder("Drafts") to the generated or-group; the class's
+		// filesPaths is still only "Authors". Matching clause shape alone would read the
+		// whole group as ours and drop "Drafts" on the next Sync.
+		const scope = { alias: "fileClass", name: "Author", folders: ["Authors"] };
+		const handEdited = {
+			and: [{ or: ['list(fileClass).contains("Author")', 'file.inFolder("Authors")', 'file.inFolder("Drafts")'] }],
+		};
+		expect(isGeneratedScopeFilter(handEdited, scope)).toBe(false);
+
+		const base = {
+			views: [{ type: "fileclass-table", name: "Author", filters: handEdited, order: ["file.name", "language"] }],
+		};
+		expect(mirrorBaseView(base, "Author", ["language"], scope)).toBe(false);
+		// The user's extra folder survives untouched.
+		expect(base.views[0].filters).toEqual(handEdited);
+	});
+
+	it("repairs a stale upstream `alias == name` class clause to the wikilink form", () => {
+		// After upgrading from upstream fileclass, a managed view keeps the property-
+		// equality clause, which matches nothing now that fileClass values are wikilinks.
+		const scope = { alias: "fileClass", name: "Author" };
+		expect(isGeneratedScopeFilter({ and: ['fileClass == "Author"'] }, scope)).toBe(true);
+
+		const base = {
+			views: [
+				{
+					type: "fileclass-table",
+					name: "Author",
+					filters: { and: ['fileClass == "Author"'] },
+					order: ["file.name", "language"],
+				},
+			],
+		};
+		expect(mirrorBaseView(base, "Author", ["language"], scope)).toBe(true);
+		expect(base.views[0].filters).toEqual({ and: ['list(fileClass).contains("Author")'] });
+	});
+
+	it("repairs a stale upstream `== name` clause inside a folder or-group", () => {
+		const scope = { alias: "fileClass", name: "Author", folders: ["Authors"] };
+		const stale = { and: [{ or: ['fileClass == "Author"', 'file.inFolder("Authors")'] }] };
+		expect(isGeneratedScopeFilter(stale, scope)).toBe(true);
+
+		const base = {
+			views: [{ type: "fileclass-table", name: "Author", filters: stale, order: ["file.name", "language"] }],
+		};
+		expect(mirrorBaseView(base, "Author", ["language"], scope)).toBe(true);
+		expect(base.views[0].filters).toEqual({
+			and: [{ or: ['list(fileClass).contains("Author")', 'file.inFolder("Authors")'] }],
+		});
 	});
 });
 

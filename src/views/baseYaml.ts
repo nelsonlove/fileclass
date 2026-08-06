@@ -97,9 +97,30 @@ export function fileClassViewFilter(scope: ClassScope): { and: FilterClause[] } 
 }
 
 /**
+ * The property predicate an older/upstream build wrote for this class:
+ * `<alias> == "<name>"`. Once fileClass values became wikilinks this matched
+ * nothing (an empty table), so it is recognized as **generated-and-stale** — a
+ * shape only Fileclass produces — and Sync repairs it to the wikilink clause
+ * rather than leaving a permanently empty view.
+ */
+function legacyClassClause(scope: ClassScope): string {
+	return `${scope.alias} == ${JSON.stringify(scope.name)}`;
+}
+
+/**
  * True when a managed view's `filters` is one Fileclass wrote and nobody edited:
- * the legacy single property clause, or an `or` group of nothing but generated
- * predicates. Anything else is the user's, and is never overwritten.
+ * the single class-name clause (current wikilink form, or the stale upstream
+ * `== "name"` form), or an `or` group whose every clause is one Fileclass would
+ * emit **for this class right now** — the class-name clause plus a folder or tag
+ * predicate whose target the class currently binds. Anything else — a clause
+ * naming a folder or tag the class does not bind, or any hand-added predicate —
+ * marks the filter as the user's, and it is never overwritten.
+ *
+ * Membership-aware on purpose: matching clause *shape* alone (any `file.inFolder(`)
+ * misread a user's hand-added `file.inFolder("Drafts")` as ours and silently
+ * dropped it on the next Sync. A clause referencing a binding the class no longer
+ * carries is left in place (Sync won't auto-prune it) — erring toward preserving
+ * the user's filter over rewriting it.
  */
 export function isGeneratedScopeFilter(filters: unknown, scope: ClassScope): boolean {
 	const group: unknown = (filters as { and?: unknown } | null)?.and;
@@ -107,22 +128,20 @@ export function isGeneratedScopeFilter(filters: unknown, scope: ClassScope): boo
 	// creep into a file that forbids it — hence the explicit `unknown[]` casts.
 	if (!Array.isArray(group) || (group as unknown[]).length !== 1) return false;
 	const only: unknown = (group as unknown[])[0];
-	if (typeof only === "string") return only === fileClassFilterClause(scope.alias, scope.name);
+	const classClause = fileClassFilterClause(scope.alias, scope.name);
+	const legacy = legacyClassClause(scope);
+	const isClassClause = (c: unknown): boolean => c === classClause || c === legacy;
+	if (typeof only === "string") return isClassClause(only);
 	if (!only || typeof only !== "object" || Object.keys(only).length !== 1) return false;
 	const clauses: unknown = (only as { or?: unknown }).or;
 	if (!Array.isArray(clauses)) return false;
-	// The class-name predicate is the wikilink idiom `list(<alias>).contains(...)`
-	// (this fork), not upstream's `<alias> == "..."` property-equality form, so the
-	// generated-filter test must recognize it or the fork's own multi-predicate
-	// filters would read as hand-edited and never sync.
-	const generated = new RegExp(
-		`^(?:list\\(${escapeForRegExp(scope.alias)}\\)\\.contains\\(|file\\.inFolder\\(|file\\.hasTag\\()`
-	);
-	return (clauses as unknown[]).every((c) => typeof c === "string" && generated.test(c));
-}
-
-function escapeForRegExp(source: string): string {
-	return source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	// Exactly the predicates fileClassPredicates() would emit for this scope, plus
+	// the stale upstream class-name form. Every clause must be one of these, and the
+	// class-name clause must be present (our shape always carries it) — so a filter
+	// missing it, or carrying a folder/tag/value the class does not bind, is the user's.
+	const allowed = new Set([...fileClassPredicates(scope), legacy]);
+	const list = clauses as unknown[];
+	return list.every((c) => typeof c === "string" && allowed.has(c)) && list.some(isClassClause);
 }
 
 /** A managed (Fileclass) table view — native `table` or editable `fileclass-table`. */
