@@ -8,14 +8,16 @@
 import { EventRef, Modal, Notice, Setting, TFile } from "obsidian";
 
 import { modalTitle } from "./modalTitle";
+import { attachRowGrid } from "./rowGridKeyboard";
 
 import type FileclassPlugin from "../../main";
-import { childPathOf, Field } from "../schema/field";
+import { childPathOf, Field, pathFieldNames } from "../schema/field";
 import { parseFileClass } from "../schema/fileClass";
 import { INDEXED_EVENT } from "../schema/fileclassIndex";
 import { dateFormatDefaults } from "../settings/settings";
 import { mutateFields } from "../schema/fileClassIo";
 import {
+	RawFieldEntry,
 	addFieldDef,
 	collectFieldIds,
 	moveFieldDef,
@@ -23,7 +25,9 @@ import {
 	updateFieldDef,
 } from "../schema/fileClassWrite";
 import { ChoiceSuggestModal } from "../fields/input/valueModals";
-import { FieldDefModal } from "./fieldDefModal";
+import { isRequired } from "../fields/validate";
+import { FieldDefModal, FieldDefResult } from "./fieldDefModal";
+import { writeFieldDependency } from "./fieldSettings";
 import { makeStickyFooter } from "./modalFooter";
 import { FileClassOptionsModal } from "./fileClassOptionsModal";
 import { openBulkEdit } from "./bulkEditModal";
@@ -31,6 +35,9 @@ import { pickAndCreateBase } from "../views/baseFileGenerator";
 import { fileClassBaseFile, openFileClassBase } from "../views/baseSync";
 
 export class FileClassSchemaModal extends Modal {
+	/** Detaches the arrow-key grid of the current render. */
+	private detachGrid?: () => void;
+
 	private changeRef?: EventRef;
 	/** Signature of the rendered fields, to skip re-renders on unrelated rebuilds. */
 	private lastSig = "";
@@ -70,6 +77,9 @@ export class FileClassSchemaModal extends Modal {
 	}
 
 	onClose(): void {
+		this.detachGrid?.();
+		// changeRef is registered on the fork's index (onOpen), not metadataCache,
+		// because `.fileclass` files are not tracked by metadataCache.
 		if (this.changeRef) this.plugin.index.offref(this.changeRef);
 		this.contentEl.empty();
 	}
@@ -123,16 +133,31 @@ export class FileClassSchemaModal extends Modal {
 			);
 	}
 
+	/**
+	 * The fileClass's full field list, read from the fork's index — `.fileclass`
+	 * definitions are not tracked by metadataCache, so reading their frontmatter
+	 * there yields nothing. The index resolves both `.md` and `.fileclass` classes
+	 * uniformly. Falls back to an empty parse before the first index build.
+	 */
+	private allFields(): Field[] {
+		return (this.plugin.index.getFileClass(this.name) ?? parseFileClass(this.name, {})).fields;
+	}
+
 	/** Fields at the current level (root or an object's children), from the index. */
 	private ownFields(): Field[] {
-		const parsed = this.plugin.index.getFileClass(this.name) ?? parseFileClass(this.name, {});
-		return parsed.fields.filter((f) => f.path === this.parentPath);
+		return this.allFields().filter((f) => f.path === this.parentPath);
 	}
 
 	private render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		const heading = this.parentPath ? `${this.name} › children` : `Schema — ${this.name}`;
+		// "Book › publisher › headquarter › children" rather than "Book › children":
+		// two levels of nesting look identical without the trail, and the children of a
+		// group are exactly where you need to know which group you are in.
+		const trail = pathFieldNames(this.allFields(), this.parentPath);
+		const heading = this.parentPath
+			? [this.name, ...trail, "children"].join(" › ")
+			: `Schema — ${this.name}`;
 		modalTitle(contentEl, heading);
 
 		if (!this.parentPath) this.renderClassActions(contentEl);
@@ -140,10 +165,17 @@ export class FileClassSchemaModal extends Modal {
 		const fields = this.ownFields();
 		if (!fields.length) contentEl.createEl("p", { text: "No fields yet." });
 
+		// The field rows live in their own container: the arrow-key grid must not
+		// reach the class-level actions above them.
+		const listEl = contentEl.createDiv({ cls: "fileclass-field-list" });
+
 		fields.forEach((field, i) => {
-			const setting = new Setting(contentEl)
+			const setting = new Setting(listEl)
 				.setName(field.name)
-				.setDesc(field.type)
+				// A field's type, and whether it may be left empty. Until now `required`
+				// lived only inside the field's own modal, so a class of a dozen fields
+				// hid which ones were mandatory behind a dozen clicks.
+				.setDesc(isRequired(field) ? `${field.type} · required` : field.type)
 				.addExtraButton((b) =>
 					b
 						.setIcon("chevron-up")
@@ -179,6 +211,13 @@ export class FileClassSchemaModal extends Modal {
 				);
 		});
 
+		this.detachGrid?.();
+		this.detachGrid = attachRowGrid(listEl, {
+			rowSelector: ":scope > .setting-item",
+			actionSelector: "button, .clickable-icon",
+			preferred: "Edit",
+		});
+
 		new Setting(makeStickyFooter(contentEl)).addButton((b) =>
 			b.setButtonText("Add field").setCta().onClick(() => this.addField())
 		);
@@ -189,31 +228,57 @@ export class FileClassSchemaModal extends Modal {
 			title: "Add field",
 			dateDefaults: dateFormatDefaults(this.plugin.settings),
 			classFields: this.plugin.index.getResolvedFields(this.name),
-			onSubmit: (r) =>
+			onSubmit: (r) => {
 				void mutateFields(this.app, this.file, (fields) =>
 					addFieldDef(
 						fields,
 						{ name: r.name, type: r.type, options: r.options, path: this.parentPath },
-						collectFieldIds(fields)
+						// Every id of the whole chain, not just this class's. Parentage of a
+						// nested field is a `path` — the parent's id — matched over the
+						// **resolved** field set, so two classes of one chain drawing the same
+						// six characters would hand one group the other's children. Measured
+						// before fixing: `childFieldsOf` returned Media's `producer` among
+						// Book's `storage` children.
+						this.chainIds(fields)
 					)
-				),
+				).then(() => this.writeDependency(r));
+			},
 		}).open();
+	}
+
+	/**
+	 * The ids a new field must avoid: this class's own (as written on disk) plus every id
+	 * reachable through `extends`. One in 56 billion per pair is not a reason to leave a
+	 * corruption reachable when the fix is one union.
+	 */
+	private chainIds(fields: RawFieldEntry[]): Set<string> {
+		const ids = collectFieldIds(fields);
+		for (const f of this.plugin.index.getResolvedFields(this.name)) ids.add(f.id);
+		return ids;
+	}
+
+	/** What saving a definition implies beyond the write — shared with the other door. */
+	private writeDependency(r: FieldDefResult): void {
+		writeFieldDependency(this.plugin, this.name, r);
 	}
 
 	private editField(field: Field): void {
 		new FieldDefModal(this.app, {
-			title: "Edit field",
+			title: `Edit ${field.name}`,
 			dateDefaults: dateFormatDefaults(this.plugin.settings),
 			classFields: this.plugin.index.getResolvedFields(this.name),
 			initial: { name: field.name, type: field.type, options: field.options },
-			onSubmit: (r) =>
+			onEditChildren: () =>
+				new FileClassSchemaModal(this.plugin, this.name, this.file, childPathOf(field)).open(),
+			onSubmit: (r) => {
 				void mutateFields(this.app, this.file, (fields) =>
 					updateFieldDef(fields, field.id, {
 						name: r.name,
 						type: r.type,
 						options: r.options,
 					})
-				),
+				).then(() => this.writeDependency(r));
+			},
 		}).open();
 	}
 

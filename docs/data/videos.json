@@ -1,4 +1,15 @@
 {
+  "000": {
+    "id": "rScC86I2vlg",
+    "url": "https://www.youtube.com/watch?v=rScC86I2vlg",
+    "title": "Fileclass #000 · Tour #1: from an untyped vault to a typed library",
+    "subject": "Tour #1: from an untyped vault to a typed library",
+    "scenario": "000_tour_first_look",
+    "doc": "",
+    "durationSeconds": 308,
+    "recordedWith": null,
+    "privacyStatus": "public"
+  },
   "001": {
     "id": "KKG_36JGjWA",
     "url": "https://www.youtube.com/watch?v=KKG_36JGjWA",
@@ -151,6 +162,138 @@
     "doc": "fields/#link-fields-file--media",
     "durationSeconds": 111,
     "recordedWith": "0.1.1",
+    "privacyStatus": "public"
+  },
+  "014": {
+    "id": "HtjfEO19p-g",
+    "url": "https://www.youtube.com/watch?v=HtjfEO19p-g",
+    "title": "Fileclass #014 · Covers and attachments",
+    "subject": "Covers and attachments",
+    "scenario": "014_covers",
+    "doc": "fields/#link-fields-file--media",
+    "durationSeconds": 115,
+    "recordedWith": "0.1.1",
+    "privacyStatus": "public"
+  },
+  "015": {
+    "id": "862i7fYe5Iw",
+    "url": "https://www.youtube.com/watch?v=862i7fYe5Iw",
+    "title": "Fileclass #015 · Candidates that depend on another field",
+    "subject": "Candidates that depend on another field",
+    "scenario": "015_dependent_candidates",
+    "doc": "fields/#conditional-candidates-dependent-fields",
+    "durationSeconds": 117,
+    "recordedWith": "0.1.1",
+    "privacyStatus": "public"
+  },
+  "016": {
+    "id": "OmUgluPZal0",
+    "url": "https://www.youtube.com/watch?v=OmUgluPZal0",
+    "title": "Fileclass #016 · A field with a fixed shape",
+    "subject": "A field with a fixed shape",
+    "scenario": "016_templated_input",
+    "doc": "fields/#input-templates",
+    "durationSeconds": 173,
+    "recordedWith": "0.2.1",
+    "privacyStatus": "public"
+  },
+  "016b": {
+    "id": "2eVs2J0vv6A",
+    "url": "https://www.youtube.com/watch?v=2eVs2J0vv6A",
+    "title": "Fileclass #016b · Dates that link to your daily notes",
+    "subject": "Dates that link to your daily notes",
+    "scenario": "016b_dates_as_links",
+    "doc": "fields/#linking-to-a-daily-note",
+    "durationSeconds": 115,
+    "recordedWith": "0.2.2",
+    "privacyStatus": "public"
+  },
+  "017": {
+    "id": "TvkZfCN5rgo",
+    "url": "https://www.youtube.com/watch?v=TvkZfCN5rgo",
+    "title": "Fileclass #017 · Pick an icon",
+    "subject": "Pick an icon",
+    "scenario": "017_pick_an_icon",
+    "doc": "fields/#icon",
+    "durationSeconds": 128,
+    "recordedWith": "0.2.2",
+    "privacyStatus": "public"
+  },
+  "018": {
+    "id": "8t8ZaCpv9ks",
+    "url": "https://www.youtube.com/watch?v=8t8ZaCpv9ks",
+    "title": "Fileclass #018 · Colors, and your own palette",
+    "subject": "Colors, and your own palette",
+    "scenario": "018_colors",
+    "doc": "fields/#color",
+    "durationSeconds": 114,
+    "recordedWith": "0.2.2",
+    "privacyStatus": "public"
+  },
+  "019": {
+    "id": "Hev8hrBxWj0",
+    "url": "https://www.youtube.com/watch?v=Hev8hrBxWj0",
+    "title": "Fileclass #019 · A place on a map",
+    "subject": "A place on a map",
+    "scenario": "019_a_place_on_a_map",
+    "doc": "fields/#location",
+    "durationSeconds": 184,
+    "recordedWith": "0.2.2",
+    "privacyStatus": "public"
+  },
+  "020": {
+    "id": "9fRoZEE2xfI",
+    "url": "https://www.youtube.com/watch?v=9fRoZEE2xfI",
+    "title": "Fileclass #020 · A group of fields inside a field",
+    "subject": "A group of fields inside a field",
+    "scenario": "020_a_group_of_fields",
+    "doc": "fields/#nested-fields-object--objectlist",
+    "durationSeconds": 211,
+    "recordedWith": "0.2.3",
+    "privacyStatus": "public"
+  },
+  "021": {
+    "id": "xHIVXu8LiEE",
+    "url": "https://www.youtube.com/watch?v=xHIVXu8LiEE",
+    "title": "Fileclass #021 · A list of grouped fields",
+    "subject": "A list of grouped fields",
+    "scenario": "021_a_list_of_grouped_fields",
+    "doc": "fields/#nested-fields-object--objectlist",
+    "durationSeconds": 225,
+    "recordedWith": "0.2.4",
+    "privacyStatus": "public"
+  },
+  "022": {
+    "id": "X3s8wtbPSTU",
+    "url": "https://www.youtube.com/watch?v=X3s8wtbPSTU",
+    "title": "Fileclass #022 · When raw is the honest answer",
+    "subject": "When raw is the honest answer",
+    "scenario": "022_when_raw_is_the_honest_answer",
+    "doc": "fields/#structured-fields-json--yaml",
+    "durationSeconds": 185,
+    "recordedWith": "0.2.5",
+    "privacyStatus": "public"
+  },
+  "023": {
+    "id": "7F5BvcUbUAc",
+    "url": "https://www.youtube.com/watch?v=7F5BvcUbUAc",
+    "title": "Fileclass #023 · Fields you can't leave empty",
+    "subject": "Fields you can't leave empty",
+    "scenario": "023_fields_you_cant_leave_empty",
+    "doc": "fields/#required-fields",
+    "durationSeconds": 114,
+    "recordedWith": "0.2.6",
+    "privacyStatus": "public"
+  },
+  "024": {
+    "id": "-bQ6s6M_pkk",
+    "url": "https://www.youtube.com/watch?v=-bQ6s6M_pkk",
+    "title": "Fileclass #024 · One parent class, three children",
+    "subject": "One parent class, three children",
+    "scenario": "024_one_parent_three_children",
+    "doc": "schema/#inheritance",
+    "durationSeconds": 220,
+    "recordedWith": "0.2.6",
     "privacyStatus": "public"
   }
 }

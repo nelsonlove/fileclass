@@ -215,7 +215,9 @@ describe("File / Media base binding", () => {
 			baseFile: "People.base",
 			viewName: "All",
 			displayColumn: "note.title",
-			embed: false,
+			// #19's pair, empty until the author picks a dependency.
+			dependsOn: "",
+			matchProperty: "",
 		});
 		expect(buildFieldOptions("MultiFile", draft)).toEqual({
 			baseFile: "People.base",
@@ -224,9 +226,11 @@ describe("File / Media base binding", () => {
 		});
 	});
 
-	it("writes embed only for Media types", () => {
+	it("no longer writes an embed marker for Media types", () => {
+		// The `embed` option is gone: an embedded frontmatter value isn't a link to
+		// Obsidian, so a rename left it dangling and a Bases image column ignored it.
 		const draft = { baseFile: "M.base", embed: true };
-		expect(buildFieldOptions("Media", draft)).toEqual({ baseFile: "M.base", embed: true });
+		expect(buildFieldOptions("Media", draft)).toEqual({ baseFile: "M.base" });
 		expect(buildFieldOptions("File", draft)).toEqual({ baseFile: "M.base" });
 	});
 });

@@ -10,34 +10,36 @@ field types and the commands that set values. Everything is written to
 
 ## Available field types
 
+Every type name below links to the section that covers it.
+
 | Type | Stores | Input | Validation |
 |------|--------|-------|------------|
-| **Input** | text | text prompt (or [guided template](#input-templates)) | must be scalar text |
-| **MultiInput** | list of text | list editor (add/remove/reorder; each item plain or [templated](#input-templates)) | a list of scalar text items |
-| **Number** | number | text prompt with − / + buttons stepping by `step` ([details](#number-fields)) | numeric; optional `min`/`max` |
-| **Boolean** | true/false | toggle | boolean |
-| **Select** | one value | value picker | must be an allowed value (if a list is defined) |
-| **Cycle** | one value | one click advances to the next value ([details](../ui/#one-gesture-per-field-type)) | must be an allowed value |
-| **Multi** | list | toggle list | each item must be allowed |
-| **Date** | date | date picker | `YYYY-MM-DD` (unless a custom format is set) |
-| **DateTime** | date+time | date-time picker | `YYYY-MM-DDTHH:mm` |
-| **Time** | time | time picker | `HH:mm` |
-| **Duration** | length of time | duration builder | an RFC 5545 `DURATION` (`P1W`, `PT1H30M`) |
-| **CycleDuration** | list of durations | duration list editor | a list of durations |
-| **Location** | `"lat,lon"` | coordinate inputs + paste | lat −90..90, lon −180..180 |
-| **Icon** | icon id | [searchable icon grid](#icon) | a registered icon id |
-| **Color** | CSS color | [swatch palette + custom](#color) | a valid CSS color |
-| **File** | link | note picker | a link string |
-| **MultiFile** | list of links | toggle list | a list of links |
-| **Media** | link/embed | file picker | a link string |
-| **MultiMedia** | list | toggle list | a list of links |
-| **Object** | nested object | draft editor | each known child validates |
-| **ObjectList** | list of objects | draft editor | each item's children validate |
-| **JSON** | free-form value | monospace textarea | must parse as JSON |
-| **YAML** | free-form value | monospace textarea | must parse as YAML |
-| **Canvas** | list of links | auto-filled from a `.canvas` | — |
-| **CanvasGroup** | list of group names | auto-filled from a `.canvas` | — |
-| **CanvasGroupLink** | list of links | auto-filled from a `.canvas` | — |
+| [**Input**](#input-templates) | text | text prompt (or a guided template) | must be scalar text |
+| [**MultiInput**](#multiinput--a-list-of-templated-values) | list of text | list editor (add/remove/reorder; each item plain or templated) | a list of scalar text items |
+| [**Number**](#number-fields) | number | text prompt with − / + buttons stepping by `step` | numeric; optional `min`/`max` |
+| [**Boolean**](#one-value-or-several) | true/false | toggle | boolean |
+| [**Select**](#where-allowed-values-come-from) | one value | value picker | must be an allowed value (if a list is defined) |
+| [**Cycle**](#where-allowed-values-come-from) | one value | one click advances to the next value ([the gesture](../ui/#one-gesture-per-field-type)) | must be an allowed value |
+| [**Multi**](#one-value-or-several) | list | toggle list | each item must be allowed |
+| [**Date**](#date-fields-date--datetime--time) | date | date picker | `YYYY-MM-DD` (unless a custom format is set) |
+| [**DateTime**](#date-fields-date--datetime--time) | date+time | date-time picker | `YYYY-MM-DDTHH:mm` |
+| [**Time**](#date-fields-date--datetime--time) | time | time picker | `HH:mm` |
+| [**Duration**](#durations--interval-cycling) | length of time | duration builder | an RFC 5545 `DURATION` (`P1W`, `PT1H30M`) |
+| [**CycleDuration**](#an-interval-sequence-cycleduration) | list of durations | duration list editor | a list of durations |
+| [**Location**](#location) | `"lat,lon"` | coordinate inputs + paste | lat −90..90, lon −180..180 |
+| [**Icon**](#icon) | icon id | searchable icon grid | a registered icon id |
+| [**Color**](#color) | CSS color | swatch palette + custom | a valid CSS color |
+| [**File**](#link-fields-file--media) | link | note picker | a link string |
+| [**MultiFile**](#link-fields-file--media) | list of links | toggle list | a list of links |
+| [**Media**](#link-fields-file--media) | link | file picker (with thumbnails) | a link string |
+| [**MultiMedia**](#link-fields-file--media) | list | toggle list | a list of links |
+| [**Object**](#nested-fields-object--objectlist) | nested object | draft editor | each known child validates |
+| [**ObjectList**](#nested-fields-object--objectlist) | list of objects | draft editor | each item's children validate |
+| [**JSON**](#structured-fields-json--yaml) | free-form value | monospace textarea | must parse as JSON |
+| [**YAML**](#structured-fields-json--yaml) | free-form value | monospace textarea | must parse as YAML |
+| [**Canvas**](#canvas-fields-canvas--canvasgroup--canvasgrouplink) | list of links | auto-filled from a `.canvas` | — |
+| [**CanvasGroup**](#canvas-fields-canvas--canvasgroup--canvasgrouplink) | list of group names | auto-filled from a `.canvas` | — |
+| [**CanvasGroupLink**](#canvas-fields-canvas--canvasgroup--canvasgrouplink) | list of links | auto-filled from a `.canvas` | — |
 
 Empty values are always valid — a field is optional unless a constraint says
 otherwise. `Lookup` and `Formula` (computed fields) are **out of scope** for
@@ -79,9 +81,19 @@ which is why *insert missing fields* leaves it blank rather than guessing.
 
 ## Required fields
 
+{{< video "023" >}}
+
 Any field can be marked **Required** in the schema editor (the toggle sits with
 the common field options, alongside the name and type). A required field with an
-empty value is reported as a violation — everywhere validation surfaces:
+empty value is reported as a violation, and the flag is visible without opening
+anything: a schema row reads `File · required`, and where the field has no value its
+own **action icon turns red** — in a note's fields and in Obsidian's Properties panel
+alike. The control you would use to fill it is the one that says it is missing; its
+tooltip spells out *required*.
+
+Nothing is ever blocked. A note that violates its class can be saved, left, and come
+back to — `required` is a statement about your model, not a gate on your typing. What
+it changes is where the violation surfaces:
 
 - the [validation columns](../views/#validation-columns) of the editable
   `fileclass-table` view,
@@ -92,6 +104,12 @@ empty value is reported as a violation — everywhere validation surfaces:
 
 Non-empty values keep their normal per-type validation (a number stays numeric,
 a `Select` must still be an allowed value, and so on).
+
+**A key is not a value.** *Insert missing fields* writes the key with nothing in it
+(`author: ""`), which leaves the note in violation — that is the point of the flag.
+Conversely a field's **Clear** removes the key altogether. In a base, the filter that
+catches both cases is `author.isEmpty()`: `!author` matches nothing, and
+`author == ""` misses the note where the key is simply absent.
 
 ## Number fields
 
@@ -115,6 +133,15 @@ dropped those keystrokes silently, leaving an empty field and no explanation.
 
 ## Input templates
 
+{{< video "016" >}}
+
+> **A template is a shape, not a list of allowed values.** For *"this field may only
+> be fiction, non-fiction or essay"*, the field type is `Select` (one value) or
+> `Multi` (several), and the values come from its **Values list** — or from a note, a
+> folder, or a base view: see [Where allowed values come from](#where-allowed-values-come-from).
+> Reach for a template when every value follows the same pattern instead — a URL, a
+> reference number, an amount with a unit.
+
 An `Input` field can define a **Template** in its options so its value follows a
 fixed structure instead of being typed by hand. The template is a plain string
 with placeholders:
@@ -128,6 +155,11 @@ For example, a `repository` field with the template
 
 When a template is set, editing the field opens a **guided form** — one control
 per placeholder plus a live **Result preview** you can still fine-tune by hand.
+A value already in the note is **read back into its parts**, so correcting one part
+keeps the others; a value that doesn't fit the template (typed by hand, or stored
+before the template existed) leaves the controls empty instead. Either way the value
+as it stands is shown as **Current value** above the controls, and stays there while
+you type — the preview is the value you are building, not the one you had.
 The stored value stays a **single text scalar** (the rendered string): a
 templated `Input` is still an `Input`, with no computation and no Bases
 dependency. A placeholder name that appears more than once is driven by a single
@@ -170,13 +202,88 @@ the alias shown in the picker and written into the link.
   them on — so a sorted view gives sorted links.
 
 {{< video "013" >}}
-- `Media`/`MultiMedia` with the `embed` option store an embed (`![[…]]`).
+- The value is always a **plain link**, never an embed (`![[…]]`). Metadata Menu
+  offered that, and it made sense there: its fields could live **inline in the note
+  body**, where an embed renders. In frontmatter it renders nothing — and worse,
+  Obsidian doesn't register an embedded value as a link, so **renaming the image
+  leaves it dangling** (a plain link is rewritten for you), it is absent from the
+  graph, and a Bases `image` column ignores it. Values already stored as embeds keep
+  resolving everywhere Fileclass reads them.
+- An **image value shows as a thumbnail** wherever Fileclass displays it — in the
+  picker, so a cover is chosen by looking at it rather than by reading
+  `cover-final-2.png`, and beside the value in the note-fields modal, the
+  Properties row and a table cell. A list shows its first three. Images only: the
+  media types also accept audio, video and PDF, and there is no honest thumbnail
+  for those.
+
+{{< video "014" >}}
 - Links honor your vault's link settings (`generateMarkdownLink`).
 
 ### Conditional candidates (dependent fields)
 
+{{< video "015" >}}
+
 A link field's candidate list can depend on the value of **another field of the
-note you are editing**. When the picker opens, Fileclass runs the bound Base view
+note you are editing** — and Fileclass writes the plumbing for you.
+
+In the field's options, under the base and view, set:
+
+- **Depends on another field** — the field of this fileClass whose value narrows the
+  list. Only single-valued fields are offered: comparing a list to a scalar needs a
+  different predicate (see [by hand](#writing-the-predicate-by-hand) below).
+- **Match on property** — the property on the *candidate* side to compare against
+  it. It defaults to the source field's name, which is the usual case.
+
+A preview shows the view that will be created and the formula behind it, so you see
+the predicate before saving rather than discovering it later inside the `.base`. On
+save, Fileclass adds them to the bound base and points the field at the generated
+view — **a narrowed copy of the view you chose**, keeping its filters, sort and
+order:
+
+```yaml
+formulas:
+  fcMatch_publisher_by_publisher: publisher.isTruthy() && this.publisher.isTruthy() && (publisher == this.publisher)
+views:
+  - type: table
+    name: All series            # yours, untouched
+    filters:
+      and:
+        - fileClass == "Series"
+    sort:
+      - property: started
+        direction: ASC
+  - type: table
+    name: "Fileclass · All series · publisher = this.publisher"
+    filters:
+      and:
+        - fileClass == "Series"                            # the scope, inherited
+        - formula.fcMatch_publisher_by_publisher == true    # the predicate, added
+    sort:
+      - property: started
+        direction: ASC
+```
+
+Four things worth knowing about what it generates:
+
+- it **narrows your view rather than replacing it**. That scope matters: a generated
+  view filtered on the formula alone would match anything in the vault sharing the
+  value — a comic published by Casterman would show up among Casterman's series;
+- the comparison shape follows the **source field's type**: a link field is compared
+  by basename, anything else by value;
+- the view's name carries the scope it narrows, so two fields narrowing different
+  views the same way don't collide, while the **formula** is named after the
+  predicate alone and is shared;
+- your base is otherwise untouched — other views, other formulas, and the tuning
+  inside the generated view (column widths, say) all survive a regeneration.
+
+A field whose candidates are notes of its own fileClass will **offer the edited note
+itself**; add `file != this.file` to the generated view if that bothers you.
+
+### Writing the predicate by hand
+
+Still available, and still the way to express what the builder doesn't — a
+multi-valued source (`this.<field>.contains(…)`), or a comparison the two types
+don't agree on. When the picker opens, Fileclass runs the bound Base view
 with the current note as its context, so `this` inside the view's filters and
 formulas resolves to that note — not only `this.file`, but its frontmatter
 properties too (`this.<PropertyName>`). Write a view filter that compares each
@@ -246,6 +353,8 @@ Editing a date opens a **native picker** (calendar / clock) with **Today** and
 
 ### Linking to a daily note
 
+{{< video "016b" >}}
+
 The **Link path** may contain **braced moment tokens**, which follow the date — so
 a link can be filed the way daily notes usually are. Only what's inside the braces
 is formatted, which is why the literal words survive (a raw moment format would
@@ -307,6 +416,13 @@ If the **Natural Language Dates** plugin is installed, an extra field parses
 phrases like *"next friday"* into the picker.
 
 ## Durations & interval cycling
+
+A duration is stored as an RFC 5545 string (`PT45M44S`, `P90D`) — the interoperable form,
+and not one anybody reads. Wherever Fileclass shows a value it shows the reading instead
+(`45m 44s`); in **Obsidian's own Properties panel**, where the stored string is what the
+editor holds, the reading is added next to it rather than replacing it, so nothing can
+write the reading back into your note. An interval sequence is a list of pills there, and
+each pill carries its own reading — `P180D 180d` — left of its remove button.
 
 {{< video "009" >}}
 
@@ -390,28 +506,54 @@ fields remain out of scope).
 
 ## Location
 
-A `Location` field stores geographic coordinates as a **`"lat,lon"`** scalar
-(the core Bases Map view / Map View plugin convention):
+{{< video "019" >}}
+
+A `Location` field stores geographic coordinates as a **`"lat,lon"`** scalar — the
+convention map plugins read:
 
 ```yaml
 location: "48.8566,2.3522"
 ```
 
 Editing gives two **range-validated** number fields (latitude −90..90, longitude
-−180..180) plus a **paste** box that accepts a `"lat,lon"` string and fills them.
-**Open in map** opens the coordinates on OpenStreetMap in your browser.
+−180..180) plus a **paste** box that fills them from whatever you copied:
+
+| pasted | read as |
+|---|---|
+| `48.8584, 2.2945` · `48.8584 2.2945` · `48.8584; 2.2945` | the pair |
+| `48.8584° N, 2.2945° E` | the pair, with `S`/`W` negative |
+| a Google Maps link (`/@lat,lon,17z`, `?q=lat,lon`) | the pair |
+| an Apple Maps link (`?ll=lat,lon`) | the pair |
+| an OpenStreetMap link (`?mlat=…&mlon=…`, `#map=15/lat/lon`) | the pair |
+| `geo:48.8584,2.2945` | the pair |
+
+Anything else says so instead of filling nothing, and a pair that is off the globe
+says *that* rather than pretending it couldn't be read. **Open in map** opens the
+coordinates on OpenStreetMap in your browser.
 
 > **No embedded map picker.** An in-app map means loading remote tiles, which is
 > against Fileclass's no-remote-resources stance (and an Electron `<webview>`
 > proved unstable). To pick a new spot, use **Open in map** or any map site in
 > your browser, then copy the `lat,lon` from the URL and paste it here.
 
-Because the value uses the standard `"lat,lon"` convention, a note with a
-`Location` field is picked up **automatically** by the core **Bases Map view**
-and the community **Map View** plugin — Fileclass just makes the property easy to
-enter correctly; it does not generate map views itself.
+### Seeing them on a map
+
+Bases has no map layout of its own. **[Maps](https://github.com/obsidianmd/obsidian-maps)**,
+a community plugin by the Obsidian team, adds one — install it from **Settings →
+Community plugins → Browse**, search *Maps*.
+
+Then open a base, add a view, set its type to **Map**, and set **Marker
+coordinates** to your `Location` field. Markers appear for every note the view's
+filters return, and follow those filters as they change. The view options also let
+each marker take its **icon** and **colour** from properties — which is what an
+[`Icon`](#icon) and a [`Color`](#color) field on the same class are for.
+
+Fileclass makes the property easy to enter correctly and validates it; drawing the
+map is the map plugin's job.
 
 ## Icon
+
+{{< video "017" >}}
 
 An `Icon` field stores an icon **id** (a single scalar), chosen from a visual
 picker:
@@ -431,6 +573,8 @@ The stored value is the **bare id** (`map-pin`, not `lucide-map-pin`). Naming an
 as the marker icon — Fileclass just makes the property easy to enter.
 
 ## Color
+
+{{< video "018" >}}
 
 A `Color` field stores a **CSS color** value (a single scalar):
 
@@ -477,6 +621,8 @@ comma-separated entry).
 
 ## Nested fields (Object / ObjectList)
 
+{{< video "020" >}}
+
 An **Object** field groups typed sub-fields into a nested structure; an
 **ObjectList** is an array of such objects. Sub-fields are declared in the same
 fileClass with a `path` pointing at their parent — nesting can go several levels
@@ -489,12 +635,72 @@ Editing opens a **draft editor**:
   **single** `processFrontMatter` call.
 - The editor mutates a clone of your existing value, so **unknown keys are
   preserved** — Fileclass never regenerates an object from the schema.
-- ObjectList items can be added, edited, reordered, and removed.
+- ObjectList items can be added, edited, reordered, and removed. A **new item exists
+  only once its editor is saved** — starting one and cancelling leaves the list exactly
+  as it was.
 
 Only **root** fields appear in the field picker; nested fields are reached by
 editing their parent object.
 
+A child may carry the **same name as a root field** — a `Book` with a `publisher`, whose
+`editions` each have their own — because a field is identified by its name *at its
+level*. The same holds for inheritance (a subclass overrides a child at that child's
+level) and for `excludes`, which name a class's own fields, the root ones; a group's
+children go with their parent.
+
+### Sorting and filtering on a child, in Bases
+
+A nested value is real structure, so a base can order rows by it — through a
+**formula**, not a dotted property. Bases resolves neither `storage.room` nor
+`note.storage.room` as a column or as a `sort:` property (both leave the order
+untouched), while a one-line formula does:
+
+```yaml
+formulas:
+  Room: note.storage.room
+  Level: note.storage.shelf.level
+views:
+  - type: table
+    name: By room
+    sort:
+      - property: formula.Room
+        direction: ASC
+      - property: formula.Level
+        direction: ASC
+```
+
+This is the half a well-shaped string can't give you: `Study · A-3` in a plain
+`Input` reads the same on screen and sorts as one opaque piece of text.
+
+An `ObjectList` answers the same way, and further — measured in a base over three
+books, one with three editions:
+
+```yaml
+formulas:
+  Count: note.editions.length            # 3 · 2 · empty where the key is absent
+  FirstFormat: note.editions[0].format   # indexing works, and reaches a child
+  FirstYear: note.editions[0].year
+  # Formats: note.editions.map(e => e.format).join(", ")   ← renders nothing
+```
+
+So a list is countable, sortable by its count, and reachable item by item. Mapping
+over it is not available: an arrow function produces an **empty cell** rather than an
+error, which is worth knowing before you build a view on one. The property itself,
+used as a plain column, shows the raw JSON — Bases has no editor for a list of
+mappings either.
+
+Obsidian has no editor for a nested property, so its **Properties** panel prints the
+value and colours it as a warning. When the field is declared as a group *and* its
+value validates, Fileclass drops that colour — the value is understood here, even if
+Obsidian can't edit it. A group whose value doesn't fit keeps the warning.
+
+A group's **children** are edited from the field itself: open its settings — the
+schema editor's *Edit*, or Alt-clicking its type icon anywhere a value is shown — and
+use **Children**. The schema screen keeps its own shortcut for the same thing.
+
 ### Display template
+
+{{< video "021" >}}
 
 Object/ObjectList fields have a **Display template** (in the schema editor)
 controlling how an item is summarized in the modal and the list editor:
@@ -507,15 +713,37 @@ controlling how an item is summarized in the modal and the list editor:
   that is blank.
 - A child that is itself an **Object** uses *its own* template (recursion).
 - **No template** → the first non-empty child value.
+
+With a template set, the summary also replaces the raw JSON that Obsidian prints for
+a nested property in its own **Properties** panel — Obsidian types a mapping as
+`unknown` and shows it read-only, so nothing is taken away, and the JSON stays in the
+tooltip. Without a template, the panel is left exactly as Obsidian renders it.
 - For **ObjectList**, each item's display is prefixed by its **rank** (`1.`, `2.`…).
 
 ## Structured fields (JSON / YAML)
 
+{{< video "022" >}}
+
 **JSON** and **YAML** hold a **free-form nested value** with no declared schema —
 the escape hatch for structures Object/ObjectList don't model. Editing opens a
-**monospace textarea** (Cmd/Ctrl+Enter saves); the text must parse as JSON (resp.
-YAML) or the modal shows the parser error. The parsed value is written to
-frontmatter as-is; clearing the text removes the field.
+**monospace textarea** (Cmd/Ctrl+Enter saves); the parser answers as you type, naming the
+line and column it stumbled on, and clearing the text removes the field.
+
+The two types differ in **what they store**, which is how you choose between them:
+
+| | Stored as | Bases can reach inside | Keeps your formatting |
+|---|---|---|---|
+| **YAML** | the parsed structure (real frontmatter keys) | yes, through a formula (`note.credits.producer`) | no — Obsidian rewrites it as YAML |
+| **JSON** | the **text**, as a block scalar (`tech: |-`) | no: it is a string | yes, byte for byte |
+
+So YAML is for structure you will query, JSON for a payload you want kept as it came — an
+API response, a snippet from elsewhere. Verified against Obsidian: a multi-line string is
+written as a block scalar, an existing block survives writes to other keys, and what comes
+back is the exact text.
+
+Changing a field's type doesn't rewrite what it holds, so a `JSON` field can open on YAML
+(or the reverse). The editor offers **Convert from YAML** / **Convert from JSON** whenever
+the text reads as the other notation, and hides the offer as soon as it doesn't.
 
 Use Object/ObjectList when the shape is known and you want typed, guided input;
 use JSON/YAML for arbitrary or externally-defined blobs. For the fuller decision

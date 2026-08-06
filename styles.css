@@ -97,7 +97,9 @@
 /* Edit button injected between key and value in the Properties editor. */
 .metadata-property > .fileclass-prop-edit {
 	flex: 0 0 auto;
-	align-self: center; /* center in the row, aligned with key/value text */
+	/* On the property name's line: a value can be a stacked list of pills, and a
+	   vertically centred button drifted to its middle row, away from the name it acts on. */
+	align-self: flex-start;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -377,9 +379,35 @@
 	cursor: pointer;
 	color: var(--text-accent);
 	text-decoration: none;
+	/* Room for the hover marker below the name — on every item, marked or not, so nothing
+	   shifts when one lights up. */
+	padding-bottom: 3px;
 }
 .fileclass-breadcrumb-item:hover {
 	text-decoration: underline;
+}
+/*
+ * Hovering a field's row marks the class that declares it, here in the footer — the mirror
+ * of hovering a class to mark its rows. Same accent bar as that marker (3px, 2px radius),
+ * laid under the name instead of down its left side, so the two directions read as one
+ * mechanism rather than two decorations. `text-decoration` was the obvious candidate and is
+ * the wrong one: the item already underlines on its own hover, and the two would collide.
+ */
+.fileclass-breadcrumb-item.is-fc-owner {
+	position: relative;
+	color: var(--text-normal);
+}
+.fileclass-breadcrumb-item.is-fc-owner::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	/* Inside the item's own box: at -3px the bar fell past the footer, outside the modal
+	   body's scroll box, and was clipped away — painted, measured, and invisible. */
+	bottom: 0;
+	height: 3px;
+	border-radius: 2px;
+	background: var(--interactive-accent);
 }
 .fileclass-breadcrumb-sep {
 	color: var(--text-faint);
@@ -555,14 +583,75 @@
 	width: 16px;
 	height: 16px;
 }
-/* Hidden native color input, activated by clicking its wrapping label. Not
-   display:none (label activation needs a rendered control) and no
-   pointer-events:none. */
-.fileclass-color-hidden {
+/* The colour inputs are real, visible <input type="color"> elements, shaped into
+   our circles — the same thing Obsidian's accent-colour setting uses, and the
+   reason its popover behaves where a hidden input inside a <label> did not. */
+.fileclass-color-slot {
+	position: relative;
+	display: inline-flex;
+	flex: 0 0 auto;
+}
+
+input.fileclass-color-circle {
+	appearance: none;
+	-webkit-appearance: none;
+	background: transparent;
+	/* element+class, because Obsidian styles input[type="color"] itself and its
+	   26x22 would otherwise sit in a row of 30px circles — and a swatch with a 50%
+	   radius on a non-square box is an ellipse, which is exactly what showed up. */
+	box-sizing: border-box;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+}
+
+input.fileclass-color-circle::-webkit-color-swatch-wrapper {
+	padding: 0;
+	width: 100%;
+	height: 100%;
+}
+
+input.fileclass-color-circle::-webkit-color-swatch {
+	width: 100%;
+	height: 100%;
+	border: none;
+	border-radius: 50%;
+	corner-shape: round;
+}
+
+/* The two pickers in a field's palette do different things, so they must not look
+   alike: "add" keeps its dashed ring and plus, "custom" keeps its rainbow ring.
+   Both inset their swatch so the ring stays visible around the chosen colour. */
+input.fileclass-color-circle.is-add::-webkit-color-swatch-wrapper,
+input.fileclass-color-circle.is-custom::-webkit-color-swatch-wrapper {
+	/* Just enough to keep the ring visible: 5px read as a dot lost inside a circle. */
+	padding: 2px;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+}
+
+/* A corner mark for "add", over the swatch but never in the way of the click. */
+.fileclass-color-slot-badge {
 	position: absolute;
-	width: 1px;
-	height: 1px;
-	opacity: 0;
+	right: -2px;
+	bottom: -2px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	corner-shape: round;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	box-shadow: 0 0 0 1px var(--background-modifier-border);
+	pointer-events: none;
+}
+
+.fileclass-color-slot-badge svg {
+	width: 10px;
+	height: 10px;
 }
 
 /* Value previews in the note-fields modal (#33/#32): color dot + icon glyph. */
@@ -586,6 +675,19 @@
 .fileclass-value-icon svg {
 	width: 1em;
 	height: 1em;
+}
+
+/* The human reading of a stored duration, beside the ISO value rather than over it. */
+.fileclass-duration-human {
+	margin-right: 0.4em;
+	padding: 0 0.35em;
+	border-radius: 4px;
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: 0.9em;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	flex: 0 0 auto;
 }
 
 /* Custom-colors palette editor (Settings, #43). */
@@ -665,6 +767,69 @@
 .modal-content.fileclass-scroll-body {
 	padding-left: var(--size-4-2, 8px);
 	padding-right: var(--size-4-2, 8px);
+}
+
+/*
+ * The type icon in a note-fields row is a label until Alt is held, when it becomes a
+ * way into the field's settings — so it only claims to be clickable then.
+ */
+.fileclass-type-icon:hover {
+	color: var(--text-normal);
+}
+.fileclass-field-row .fileclass-type-icon svg.lucide-wrench {
+	cursor: pointer;
+	color: var(--text-accent);
+}
+
+/*
+ * The generated predicate, previewed under the dependency controls (#19): the view
+ * name that will be created, then the formula in the base's own language.
+ */
+.fileclass-formula {
+	display: block;
+	margin-top: var(--size-2-1, 2px);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+/* A control that has nothing to act on yet, dimmed rather than removed so the
+ * form doesn't jump as the dropdown above it is set. */
+.fileclass-setting-off {
+	opacity: 0.5;
+}
+
+/*
+ * Media thumbnails (#44 follow-up). One size everywhere a media value or candidate
+ * appears — picker row, note-fields modal, properties row, table cell — because
+ * the point is recognising the picture, not admiring it. `contain` keeps a large
+ * image from forcing layout work on a long list.
+ */
+.fileclass-thumb {
+	height: 28px;
+	width: auto;
+	max-width: 44px;
+	object-fit: cover;
+	border-radius: 3px;
+	flex: 0 0 auto;
+	vertical-align: middle;
+	/* `layout paint`, never `size`: size containment zeroes the intrinsic
+	 * dimensions, so `width: auto` resolved to 0 and the image loaded, measured
+	 * 28px tall, and painted nothing. */
+	contain: layout paint;
+}
+/* Several thumbnails for a list value, side by side. */
+.fileclass-thumb-strip {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	vertical-align: middle;
+}
+/* A row that leads with a thumbnail: keep image and text on one baseline. */
+.fileclass-suggestion-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2, 8px);
+	min-width: 0;
 }
 
 /*
@@ -812,4 +977,334 @@
 .fileclass-format-problem {
 	margin-top: var(--size-2-1);
 	color: var(--text-error);
+}
+
+/* The stored value, above a templated Input's controls. Selectable and never
+   rewritten: the Result preview shows what you are building, this shows what is
+   there now — the two must not look like the same line. */
+.fileclass-current-value {
+	margin-bottom: var(--size-4-3);
+	font-size: var(--font-ui-small);
+	user-select: text;
+	overflow-wrap: anywhere;
+}
+
+.fileclass-current-value-label {
+	color: var(--text-muted);
+}
+
+/* The glyph beside "Current icon:" — same line as its id, aligned with the text. */
+.fileclass-current-icon {
+	display: inline-flex;
+	vertical-align: text-bottom;
+	margin-right: var(--size-2-2);
+}
+
+.fileclass-current-icon .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* A nested group Obsidian can't interpret, but that a fileClass declares and
+   validates: it paints those in --text-warning, which is right for a value nobody
+   can make sense of and wrong here. An invalid group keeps the warning. */
+.metadata-property-value-item.mod-unknown.fileclass-group-ok {
+	color: inherit;
+}
+
+/*
+ * Room for the first row's focus ring, and for the one the arrows scroll to.
+ *
+ * A modal's title is sticky with an opaque background and a z-index, so it paints
+ * *over* the scrolling list: the top 3px of the first row's focus ring disappeared
+ * under it. Measured on pixels rather than eyeballed — the ring's top edge was a flat
+ * 101px line, and 8px of padding brings back the rounded corners.
+ *
+ * `scroll-padding-top` is the same problem in motion: arrowing down to a row below
+ * the fold would otherwise park it under the title.
+ */
+.fileclass-field-list {
+	padding-top: var(--size-4-2);
+}
+
+.fileclass-scroll-body {
+	scroll-padding-top: var(--size-4-4);
+}
+
+/* "Unsaved changes", in the sticky footer and on the same line as Save, pushed to the
+   left edge. In the footer because it is the one part of a long list that is always on
+   screen — a line above the buttons scrolls out of sight exactly when it matters. */
+.fileclass-sticky-footer > .setting-item {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.fileclass-unsaved-hint {
+	display: none;
+	margin-right: auto;
+	color: var(--text-warning);
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+}
+
+.fileclass-unsaved-hint.is-visible {
+	display: block;
+}
+
+/* The reading of one stored duration, inside its own pill and left of the remove
+   button — where it names the value it reads instead of summarising from a distance. */
+.multi-select-pill > .fileclass-pill-human {
+	margin-left: 0.45em;
+	padding: 0 0.3em;
+	border-radius: 3px;
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: 0.85em;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+/* A control that only applies to some content — the JSON/YAML conversion offer, the way
+   through to a parent class — hidden rather than disabled, because a button that can never
+   be pressed is noise. An `addExtraButton` is a div, not a <button>, hence both. */
+.modal button.is-hidden-fc,
+.modal .clickable-icon.is-hidden-fc {
+	display: none;
+}
+
+/* A modal's title is its drag handle (modalDrag.ts): a centred modal often covers the
+   very thing you are filling it in from. The cursor is the whole affordance — no extra
+   chrome on a title that is also a heading. */
+.fileclass-drag-handle {
+	cursor: grab;
+	user-select: none;
+	/* The pointer must not be captured by a text selection mid-drag. */
+	touch-action: none;
+}
+.fileclass-drag-handle.is-dragging {
+	cursor: grabbing;
+}
+
+/*
+ * Stacked modals dim the app once, not once per modal.
+ *
+ * Obsidian gives every `.modal-container` its own `.modal-bg` at 0.85, and each covers the
+ * whole window — so a stack of three darkens the app three times over, and each backdrop
+ * also washes out the modals below it. Measured: three containers, three identical
+ * backdrops. Keeping the first one (the app behind stays dimmed) and clearing the later
+ * ones (the modals below stay crisp) is the whole fix, and it needs no bookkeeping: the
+ * selector means "a container that has another container before it".
+ *
+ * `!important` is not decoration here, and it was measured before being used: Obsidian
+ * sets `style="opacity: 0.85"` **inline** on each backdrop as it animates it in, and an
+ * inline style beats every selector. Without it the rule matches — verified — and loses.
+ */
+body.fileclass-movable-modals .modal-container ~ .modal-container .modal-bg {
+	opacity: 0 !important;
+	/* And it must not catch the pointer either: an invisible backdrop still intercepts
+	   every click, which is precisely why only the topmost modal could be touched — the
+	   element under the pointer over a lower modal's title was measured to be this. */
+	pointer-events: none;
+}
+/*
+ * The container above is full-window too, and once its backdrop stopped catching clicks it
+ * was the next thing to catch them (measured, in that order). So a stacked container is
+ * click-through, and its own modal is put back in the way — which is what makes every
+ * modal of a stack, not just the top one, clickable and draggable.
+ */
+body.fileclass-movable-modals .modal-container ~ .modal-container {
+	pointer-events: none;
+}
+/*
+ * Everything the container holds except its backdrop takes the pointer back. Naming
+ * `.modal` alone was a bug the operator found in a minute: a picker's container holds a
+ * `.prompt`, not a `.modal` (measured: children are `modal-bg` + `prompt`), so every
+ * suggestion in a File field's picker was unclickable — the click fell through to the
+ * modal underneath. Whatever Obsidian puts in there is interactive; only the backdrop is
+ * not.
+ */
+body.fileclass-movable-modals .modal-container ~ .modal-container > *:not(.modal-bg) {
+	pointer-events: auto;
+}
+/*
+ * While modals are stacked, clicking the dim area closes nothing.
+ *
+ * With the upper backdrops made click-through, a click outside would otherwise fall to the
+ * FIRST container's backdrop and close the modal at the bottom of the stack — the one the
+ * others were opened from. A single modal keeps Obsidian's click-to-close; Escape still
+ * closes the top one either way.
+ */
+body.fileclass-movable-modals:has(.modal-container ~ .modal-container) .modal-container .modal-bg {
+	pointer-events: none;
+}
+
+
+
+/*
+ * An unmet requirement colours the field's own action — in the note-fields modal and in
+ * Obsidian's Properties panel alike. The control you would use to fix it is the one that
+ * says something is missing; a word in a red box, tried first, read as an error banner
+ * dropped into the row. The tooltip says "required" for anyone who needs the words.
+ */
+.fileclass-field-row .setting-item-control .clickable-icon.is-required-empty,
+.metadata-property > .fileclass-prop-edit.is-required-empty {
+	color: var(--text-error);
+}
+.fileclass-field-row .setting-item-control .clickable-icon.is-required-empty:hover,
+.metadata-property > .fileclass-prop-edit.is-required-empty:hover {
+	color: var(--text-error);
+	opacity: 0.8;
+}
+
+/*
+ * ── Compact modals ─────────────────────────────────────────────────────────────
+ *
+ * Our modals outgrew Obsidian's settings metrics. Those numbers — 16px above and
+ * below every row, a separator between each, 32px controls — were drawn for a
+ * full-width settings pane, not for a box capped at 70vh. A class's options is
+ * thirteen rows, a schema editor has as many rows as you have fields, and a note's
+ * fields as many as it inherits, so nearly everything scrolled.
+ *
+ * Measured before this block, on a 1000px window (706px of room): the options modal
+ * asked for 973px of content, the schema editor 1075, a note's fields 912.
+ *
+ * Scoped to `.fileclass-scroll-body` — the class `modalTitle()` puts on our own modal
+ * bodies — so Obsidian's modals and every other plugin's are left exactly as they are.
+ * Lists of like rows keep the tighter rhythm they already had (see `.fileclass-setting-
+ * list` above), whose selectors are more specific than these.
+ *
+ * The row selectors carry `.modal:not(.mod-settings)` for one reason: app.css writes the
+ * padding and the separator as `.modal:not(.mod-settings) .setting-item:not(.setting-item-
+ * heading):where(:not(.setting-group *))`, four classes' worth, and a three-class selector
+ * of ours loses to it silently — measured, after a first pass that changed nothing.
+ */
+.modal-content.fileclass-scroll-body,
+.prompt.fileclass-prompt {
+	--fc-row-pad: var(--size-2-3);
+	--fc-control-h: 26px;
+	--fc-button-h: 24px;
+	--fc-control-font: var(--font-ui-smaller);
+	--fc-item-pad: var(--size-2-2);
+}
+/*
+ * Every one of those is a **pointer** number. A 24px button and a 26px field are hard to
+ * hit with a thumb — the usual guidance is nearer 44px — and Obsidian's mobile metrics are
+ * already touch-sized on purpose. So a phone keeps what costs nothing (no separators, less
+ * padding between rows) and gets its controls and their labels back at full size.
+ */
+body.is-mobile .modal-content.fileclass-scroll-body,
+body.is-mobile .prompt.fileclass-prompt {
+	--fc-row-pad: var(--size-4-2);
+	--fc-control-h: 32px;
+	--fc-button-h: 32px;
+	--fc-control-font: var(--font-ui-small);
+	--fc-item-pad: var(--size-4-1);
+}
+.modal:not(.mod-settings)
+	.modal-content.fileclass-scroll-body
+	.setting-item:not(.setting-item-heading) {
+	border-top: none;
+	padding-top: var(--fc-row-pad);
+	padding-bottom: var(--fc-row-pad);
+}
+/* A section heading still needs air above it, or it stops separating anything — but not the
+   16px of indent app.css gives it, which set the title in from the rows it announces. */
+.modal:not(.mod-settings)
+	.modal-content.fileclass-scroll-body
+	.setting-item.setting-item-heading {
+	padding-top: var(--size-4-3);
+	padding-bottom: var(--size-2-1);
+	padding-inline-start: 0;
+}
+/* The footer keeps its own rhythm: it already sits under a border of its own. */
+.modal:not(.mod-settings)
+	.modal-content.fileclass-scroll-body
+	.fileclass-sticky-footer
+	> .setting-item {
+	padding-top: 0;
+	padding-bottom: var(--size-2-2);
+}
+/* A description is a second line on every row it appears on; at 11px it stays
+   readable and stops competing with the name above it. */
+.modal-content.fileclass-scroll-body .setting-item-description {
+	font-size: var(--font-ui-smaller);
+}
+/* 32px is a page metric. In a dense list the button, not the text, sets the row's
+   height — so the row is 32px tall to hold one word. */
+.modal-content.fileclass-scroll-body button:not(.clickable-icon) {
+	height: var(--fc-button-h);
+	padding: 0 var(--size-4-2);
+	font-size: var(--fc-control-font);
+}
+/* Same for the fields you type in. Checkboxes, ranges and colour wells keep their
+   own sizing: they are not text boxes and shrinking them breaks their hit area. */
+.modal-content.fileclass-scroll-body
+	input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.modal-content.fileclass-scroll-body select {
+	height: var(--fc-control-h);
+}
+/* A dropdown carries the same weight as the buttons beside it. */
+.modal-content.fileclass-scroll-body select {
+	font-size: var(--fc-control-font);
+}
+/* And a 1px focus ring rather than 2px: at this density the thicker one reads as a
+   second border around the field. */
+.modal-content.fileclass-scroll-body input:focus,
+.modal-content.fileclass-scroll-body select:focus,
+.modal-content.fileclass-scroll-body textarea:focus {
+	box-shadow: 0 0 0 1px var(--background-modifier-border-focus);
+}
+/* The value column of a note's fields sat at 15px beside a 13px field name, so the
+   value read as the heading. Same size as the name it belongs to. */
+.fileclass-field-value {
+	font-size: var(--font-ui-small);
+}
+/* A field's type is a two-word label, and it was taking a line of its own under every
+   name — sixteen fields, sixteen wasted lines. On the name's own line instead, muted:
+   `author  File · required`. Only in the field lists, where the description is a label;
+   elsewhere it is a sentence and belongs underneath. */
+.modal-content.fileclass-scroll-body .fileclass-field-list .setting-item-info {
+	display: flex;
+	flex-direction: row;
+	align-items: baseline;
+	flex-wrap: wrap;
+	column-gap: var(--size-4-2);
+}
+.modal-content.fileclass-scroll-body .fileclass-field-list .setting-item-description {
+	margin-top: 0;
+}
+/* And more of the modal is usable before anything scrolls: 70vh left a fifth of a tall
+   window empty under a modal that was already scrolling. */
+.modal-content.fileclass-scroll-body {
+	max-height: min(80vh, 100%);
+}
+/* In a compacted row the thumbnail must not be what sets the height: a field's line is
+   ~20px, so a 28px picture made the media row visibly taller than every other one, and
+   the eye read it as an error. 20px here; a picker row and a table cell keep 28px, where
+   recognising the picture is the whole point. */
+.fileclass-field-value .fileclass-thumb,
+.metadata-property .fileclass-thumb {
+	height: 20px;
+	max-width: 32px;
+}
+/*
+ * Our pickers built on SuggestModal render a `.prompt`, not a `.modal`, so none of the
+ * compaction above reached them: choosing one File measured 15px a row while choosing
+ * several measured 13px — the same job in two sizes. Marked in the constructors
+ * (`fileclass-prompt`) rather than by guessing at Obsidian's own prompt markup.
+ */
+.prompt.fileclass-prompt .prompt-input,
+.prompt.fileclass-prompt .suggestion-item {
+	font-size: var(--font-ui-small);
+}
+.prompt.fileclass-prompt .suggestion-item {
+	padding: var(--fc-item-pad) var(--size-4-2);
+}
+/* The reading of a child's value in an Object editor: it was the modal's body size, larger
+   than the field name beside it and larger than the same value in a note's fields. */
+.fileclass-object-value {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }

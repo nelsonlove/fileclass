@@ -9,6 +9,10 @@ weight: 15
 One feature per video, a minute or two each, in the order they build on each
 other. Captions are English; YouTube translates them into your language.
 
+## Tour #1: from an untyped vault to a typed library
+
+{{< video "000" >}}
+
 ## Install and set up
 
 {{< video "001" >}}
@@ -64,3 +68,51 @@ other. Captions are English; YouTube translates them into your language.
 ## Several links in one field
 
 {{< video "013" >}}
+
+## Covers and attachments
+
+{{< video "014" >}}
+
+## Candidates that depend on another field
+
+{{< video "015" >}}
+
+## A field with a fixed shape
+
+{{< video "016" >}}
+
+## Dates that link to your daily notes
+
+{{< video "016b" >}}
+
+## Pick an icon
+
+{{< video "017" >}}
+
+## Colors, and your own palette
+
+{{< video "018" >}}
+
+## A place on a map
+
+{{< video "019" >}}
+
+## A group of fields inside a field
+
+{{< video "020" >}}
+
+## A list of grouped fields
+
+{{< video "021" >}}
+
+## When raw is the honest answer
+
+{{< video "022" >}}
+
+## Fields you can't leave empty
+
+{{< video "023" >}}
+
+## One parent class, three children
+
+{{< video "024" >}}

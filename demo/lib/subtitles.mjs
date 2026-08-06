@@ -29,6 +29,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Cmd+Ctrl+Option+Shift+C — four modifiers, so nothing else claims it. */
 const CUE_CODE = process.env.FILECLASS_DEMO_CUE || "KeyC";
 export const CUE_LABEL = `⌘⌃⌥⇧${CUE_CODE.replace(/^Key/, "")}`;
+/** Same modifiers, U: lifts the caption to the top of the screen and back. */
+export const LIFT_LABEL = "⌘⌃⌥⇧U";
+/** Same modifiers, I: types the step's `input` into the focused field. */
+export const INSERT_LABEL = "⌘⌃⌥⇧I";
 
 /** `showKeys: false` records without the key badge (see Stage.showKeys). */
 export async function connect(port, { showKeys = true } = {}) {
@@ -43,16 +47,47 @@ export async function connect(port, { showKeys = true } = {}) {
 
 /** Injected in each window: caption element + cue listener. Idempotent. */
 function install(cueCode) {
+	const LIFT_CODE = "KeyU";
+	const INSERT_CODE = "KeyI";
+	/** Puts the caption (and the key badge under it) at the top or the bottom. */
+	const applyPlacement = () => {
+		const top = !!window.__fcDemo?.top;
+		for (const id of ["fc-demo-subtitle", "fc-demo-keys"]) {
+			document.getElementById(id)?.classList.toggle("fc-top", top);
+		}
+	};
+	window.__fcApplyPlacement = applyPlacement;
+
 	if (!window.__fcDemo) {
 		window.__fcDemo = { cue: 0 };
 		window.addEventListener(
 			"keydown",
 			(e) => {
-				if (e.code !== window.__fcDemo.code) return;
 				if (!(e.metaKey && e.ctrlKey && e.altKey && e.shiftKey)) return;
-				e.preventDefault();
-				e.stopPropagation();
-				window.__fcDemo.cue++;
+				if (e.code === window.__fcDemo.code) {
+					e.preventDefault();
+					e.stopPropagation();
+					window.__fcDemo.cue++;
+					return;
+				}
+				// Same chord, U: lift the caption out of the way of whatever it covers
+				// — a setting at the bottom of a pane, a picker's own controls. Press
+				// again to drop it back, and the next subtitle starts at the bottom.
+				if (e.code === LIFT_CODE) {
+					e.preventDefault();
+					e.stopPropagation();
+					window.__fcDemo.top = !window.__fcDemo.top;
+					applyPlacement();
+					return;
+				}
+				// The runner watches this counter and types the step's value into
+				// whatever is focused — the operator asked for it, so the keystrokes
+				// are theirs even though the fingers aren't.
+				if (e.code === INSERT_CODE) {
+					e.preventDefault();
+					e.stopPropagation();
+					window.__fcDemo.insert = (window.__fcDemo.insert ?? 0) + 1;
+				}
 			},
 			true
 		);
@@ -117,10 +152,12 @@ function install(cueCode) {
 			"keydown",
 			(e) => {
 				if (!window.__fcKeys.enabled || e.repeat) return;
-				const isCue =
-					e.code === window.__fcDemo?.code &&
+				const isOperatorChord =
+					(e.code === window.__fcDemo?.code ||
+						e.code === LIFT_CODE ||
+						e.code === INSERT_CODE) &&
 					e.metaKey && e.ctrlKey && e.altKey && e.shiftKey;
-				if (isCue) return clear();
+				if (isOperatorChord) return clear();
 				const chord = chordOf(e);
 				if (!chord) return;
 				window.clearTimeout(state.pending);
@@ -158,7 +195,23 @@ function install(cueCode) {
 				color:#fff;font-size:19px;line-height:1.2;font-weight:600;letter-spacing:1.5px;
 				font-family:-apple-system,BlinkMacSystemFont,sans-serif;pointer-events:none;
 				user-select:none;opacity:0;transition:opacity .16s ease,transform .16s ease}
-			#fc-demo-keys.fc-show{opacity:1;transform:translateX(-50%) translateY(0)}`;
+			#fc-demo-keys.fc-show{opacity:1;transform:translateX(-50%) translateY(0)}
+			/* The values live on their own row, wrapping and centred. Appended inline
+			   after the sentence, one long value pushed the line past the caption's own
+			   width and the end of it disappeared off the window. */
+			#fc-demo-subtitle .fc-chips{display:flex;flex-wrap:wrap;justify-content:center;
+				gap:.35em .5em;margin-top:.5em}
+			#fc-demo-subtitle .fc-input,#fc-demo-subtitle .fc-typed{padding:0 .4em;
+				border-radius:6px;font-variant-numeric:tabular-nums;letter-spacing:.4px;
+				overflow-wrap:anywhere}
+			/* Yellow: a chord will type this. Blue: you type it yourself. Two colours so
+			   the operator never waits for a value that nothing is going to insert. */
+			#fc-demo-subtitle .fc-input{background:rgba(224,172,0,.16);color:#ffd75e}
+			#fc-demo-subtitle .fc-input.is-done{background:rgba(224,172,0,.07);color:#8d7a3c;
+				text-decoration:line-through}
+			#fc-demo-subtitle .fc-typed{background:rgba(0,183,211,.16);color:#7fdcf0}
+			#fc-demo-subtitle.fc-top:not(.fc-title){bottom:auto;top:6vh}
+			#fc-demo-keys.fc-top{bottom:auto;top:2vh}`;
 		document.head.appendChild(style);
 		const el = document.createElement("div");
 		el.id = "fc-demo-subtitle";
@@ -180,7 +233,9 @@ class Stage {
 		this.seen = new Map(); // page → order of appearance (newest window wins ties)
 		this.seq = 0;
 		this.focused = null; // the ONE window currently showing the caption
-		this.caption = { text: "", title: false };
+		this.caption = { text: "", title: false, input: [], values: [] };
+		this.inserts = 0; // insert-chord presses already served
+		this.typed = 0; // values of this step already typed by the chord
 	}
 
 	/**
@@ -278,17 +333,48 @@ class Stage {
 
 	/** Paints the caption on the focused window and blanks it on every other. */
 	async paint() {
-		const { text, title } = this.caption;
+		const { text, title, input, values } = this.caption;
 		await Promise.all(
 			this.pages.map((page) =>
 				page
 					.evaluate(
-						(t, isTitle, focused, showKeys) => {
+						(t, isTitle, focused, showKeys, chips) => {
 							const el = document.getElementById("fc-demo-subtitle");
 							if (!el) return;
+							// A different line means the next step: back to the bottom.
+							// Repaints of the same line (focus moved windows) keep it where
+							// the operator put it. The chips repaint with it, which is how a
+							// typed value gets struck through as it is served.
+							const sentence = el.dataset.line ?? "";
+							if (sentence !== t && window.__fcDemo) window.__fcDemo.top = false;
 							el.textContent = t;
+							el.dataset.line = t;
+							// The values, set apart so they read as data rather than as part
+							// of the sentence: yellow ones a chord types, blue ones you type.
+							// On their own row, so no value can push the sentence off the box.
+							if (t && chips.length) {
+								const row = document.createElement("div");
+								row.className = "fc-chips";
+								for (const c of chips) {
+									const chip = document.createElement("span");
+									chip.className = c.done ? "fc-input is-done" : c.cls;
+									// A multi-line value is one value, shown on one line: the caption is
+									// two lines tall, not twelve. The keystrokes keep the newlines.
+									const flat = c.value.replace(/\n+/g, " ⏎ ");
+									// A yellow value is typed by the chord, so it only has to be
+									// recognisable — measured: past ~44 characters the chip takes a second
+									// line and the caption grows to the height of a three-line one. A blue
+									// value is read in order to be typed, and stays whole.
+									const long = c.cls === "fc-input" && flat.length > 44;
+									chip.textContent = long ? `${flat.slice(0, 44)}…` : flat;
+									if (long) chip.title = c.value;
+									row.appendChild(chip);
+								}
+								el.appendChild(row);
+							}
 							el.classList.toggle("fc-title", !!isTitle);
 							el.classList.toggle("fc-show", !!t);
+							window.__fcApplyPlacement?.();
 							// The key badge follows the caption: one window at a time.
 							if (window.__fcKeys) {
 								window.__fcKeys.enabled = !!showKeys && !!focused;
@@ -298,22 +384,58 @@ class Stage {
 						page === this.focused ? text : "",
 						title,
 						page === this.focused,
-						this.showKeys
+						this.showKeys,
+						[
+							...input.map((value, i) => ({ value, cls: "fc-input", done: i < this.typed })),
+							...values.map((value) => ({ value, cls: "fc-typed", done: false })),
+						]
 					)
 					.catch(() => {})
 			)
 		);
 	}
 
-	async show(text, { title = false } = {}) {
-		this.caption = { text, title };
+	async show(text, { title = false, input = [], values = [] } = {}) {
+		this.caption = { text, title, input, values };
+		this.typed = 0;
+		this.inserts = await this.insertCount(); // ignore anything pressed before now
 		await this.syncFocus(); // land it on the window that's actually in front
 		await this.paint();
 	}
 
 	async hide() {
-		this.caption = { text: "", title: false };
+		this.caption = { text: "", title: false, input: [], values: [] };
 		await this.paint();
+	}
+
+	/** How many times the insert chord has been pressed in the focused window. */
+	async insertCount() {
+		if (!this.focused) return 0;
+		return (await this.focused.evaluate(() => window.__fcDemo?.insert ?? 0).catch(() => 0)) ?? 0;
+	}
+
+	/**
+	 * Types the next of this step's `input` values wherever the operator is, if they
+	 * asked for it since the last check. Real keystrokes rather than a value
+	 * assignment: Obsidian's fields listen for input events, and a take should show
+	 * the text appearing.
+	 *
+	 * One press serves one value, in order: a step that fills a room, a unit and a
+	 * level has three boxes, and typing all three into the first one is worse than
+	 * typing nothing. Served values are struck through in the caption, so the
+	 * operator can see how far the chord has got.
+	 */
+	async typeRequestedInput() {
+		const queue = this.caption.input;
+		if (this.typed >= queue.length || !this.focused) return false;
+		const pressed = await this.insertCount();
+		if (pressed <= this.inserts) return false;
+		this.inserts = pressed;
+		const value = queue[this.typed];
+		this.typed += 1;
+		await this.focused.keyboard.type(value, { delay: 12 }).catch(() => {});
+		await this.paint();
+		return true;
 	}
 
 	/** Removes the injected overlay (leaves the window otherwise untouched). */
@@ -360,6 +482,7 @@ class Stage {
 					throw new Error("aborted");
 				}
 				if (keyboard.take() || (await this.cued())) return;
+				await this.typeRequestedInput();
 				tick++;
 				if (tick % 4 === 0) await this.syncFocus(); // follow the front window
 				if (tick % 12 === 0) await this.refresh(); // ~1s: catch new windows

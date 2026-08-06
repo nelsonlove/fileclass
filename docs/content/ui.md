@@ -27,6 +27,13 @@ type](#one-gesture-per-field-type) rule:
 explicit value — and on a date wired to an interval sequence, Alt-click advances
 it instead of opening the picker.
 
+**Alt-click a row's type icon** to open that field's **settings** — the same
+definition editor the schema editor uses, addressed by field. Hold Alt over the icon
+and it becomes a wrench, so the gesture announces itself. Changing one option of a
+field you are looking at no longer means leaving the note, opening its fileClass and
+finding the field again; the write goes to the fileClass note that *declares* the
+field, which for an inherited one is the ancestor.
+
 Header actions: **Insert missing fields** (adds any root fields absent from the
 frontmatter) and **Add fileClass** (binds another fileClass to the note).
 
@@ -40,6 +47,12 @@ note's indicator icon and the fileClass's right-click menu open, stacked over th
 note so closing it brings you back. On **hover**, a name marks the rows of the fields
 that fileClass declares with a vertical bar, so you can see which fileClass owns
 which field (inherited fields point at the ancestor that declares them).
+
+It works **both ways**: hovering a field's row marks, in the footer, the class that
+declares it — the same accent bar, laid under the name. So "what does this class give
+me?" and "where does this field come from?" are the same gesture, read in either
+direction. An ancestor is marked in every breadcrumb it appears in, since `Media` under
+`Book` and `Media` under `Album` are the same declaration.
 
 Open it with the command **Fileclass: manage note fields** or from a context
 menu.
@@ -135,6 +148,74 @@ CLI's `set-where`:
 
 > Dry-run first: nothing is written until you Apply. As always, writes go
 > straight to your vault — keep regular backups.
+
+## Moving a modal out of the way
+
+**Experimental, and off by default** — turn on *Movable modals* in Settings → Fileclass.
+The behaviour works by neutralising Obsidian's own full-window modal backdrops, which every
+plugin shares, so it stays opt-in until it has been lived with. Desktop only.
+
+A modal is centred, and what it covers is often what you are filling it in from — the
+note's own properties, a base's rows, the value behind it. **Drag a modal by its title**
+to move it; the cursor over the title says so. It cannot be dropped out of reach: a
+recognisable piece of it always stays on screen, and its title never goes above the top
+edge, since that is what you would grab to bring it back.
+
+A modal opening **over** another lands slightly off it — down and to the right — so a
+stack reads as a stack and you can still see, and grab, the one underneath. The offset
+stops growing after a few levels, and dragging a modal replaces it.
+
+Position is per-modal and not remembered: the next one you open is centred again.
+
+**Any modal of a stack can be moved**, not only the top one. Obsidian gives each modal a
+full-window backdrop, so an invisible one still swallowed every click aimed at a modal
+underneath; those upper backdrops are click-through now, and so are their containers, with
+each modal itself put back in the way.
+
+Stacked modals also **dim the app once**, not once per modal: three of them used to darken
+the window three times over and wash out the ones below.
+
+One consequence, deliberate: **while modals are stacked, clicking the dim area closes
+nothing** — otherwise the click would fall through to the bottom modal, the one the others
+were opened from. A single modal still closes on an outside click, and <kbd>Escape</kbd>
+always closes the top one.
+
+**Desktop only.** On mobile the handle would have to take over touch gestures on the
+title, which would cost you scrolling the modal with your thumb — a real loss for a
+gesture that isn't worth much on a phone.
+
+## Unsaved changes
+
+A modal that holds a draft — a field's definition, a group's values, a list's items —
+says so as soon as the draft differs from what it opened on: **Unsaved changes**
+appears at the left of its footer, on the same line as Save — the footer is pinned, so
+the warning stays on screen however long the list is. Closing it then asks rather than discarding, with the
+three answers that exist: **Keep editing**, **Discard**, or **Save**. That covers
+Escape, the close button and a click outside, since Obsidian routes all three through
+the same close.
+
+A modal you haven't changed still closes on Escape without a word.
+
+## Moving through a field list
+
+Every modal that lists rows carrying the same actions is navigated with the arrow
+keys — the **note-fields modal**, the **schema editor**, the same list scoped to an
+[object's children](../fields/#nested-fields-object--objectlist), and the **value
+editors** of an `Object` and an `ObjectList`:
+
+| key | effect |
+|-----|--------|
+| ↓ / ↑ | the **same action** on the next / previous field |
+| → / ← | the next / previous action of that field |
+| Home / End | the first / last field, keeping the action |
+| Enter or Space | activates it, as any button |
+
+The list is a **single tab stop**: Tab reaches it, the arrows move inside it, Tab
+leaves for the footer. A class of a dozen fields used to put fifty-five stops between
+you and the Save button.
+
+Moving down keeps the *action*, not the column: a group field carries an extra
+**Children** button, so ↓ from *Edit* lands on *Edit* — never on *Remove*.
 
 ## Field indicator
 

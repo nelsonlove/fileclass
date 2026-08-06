@@ -4,9 +4,427 @@ All notable changes to Fileclass are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); this project uses
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.7] - 2026-08-05
+
+### Changed
+
+- **The modals are compact.** They had been drawn with Obsidian's settings-page metrics —
+  16px above and below every row, a separator between each, 32px controls — which are meant
+  for a full-width pane, not a box capped at a fraction of the window. Everything scrolled:
+  measured on a 1000px window with 706px of room, a note's fields asked for 912px, a class's
+  options 973, a schema editor 1075. Now 618, 720 and 655 — **a note's fields, a
+  sixteen-field schema and a field's definition no longer scroll at all**, and a class's
+  options misses by 14px.
+
+  No separators, 6px rows, 24px buttons, 26px inputs and dropdowns, a 1px focus ring instead
+  of 2px, and descriptions, buttons and dropdowns all at 11px. A field's **type sits on the
+  name's line** in the schema editor (`author  File · required`) rather than on a line of its
+  own, sixteen fields deep. A note's field **values drop from 15px to 13px**, the size of the
+  name they belong to. Media
+  thumbnails shrink to 20px in a row — a picker row and a table cell keep 28px, where
+  recognising the picture is the point. And a modal may use 80% of the window's height
+  before anything scrolls, rather than 70%.
+
+  The pickers followed: choosing **one** value read a size larger than choosing several,
+  because a suggester is a `.prompt` and not a `.modal`, and the reading of a child's value
+  in an **Object** editor was the modal's body size. Both are now the 13px every other value
+  is shown at. Section titles line up with the rows they announce, rather than sitting 16px
+  in from them, and carry no description of their own — three helpful lines cost three rows
+  to restate what `Identity`, `Bound notes` and `Sync to base` already say. The one fact the
+  rows could not state without saying it three times, that those lists are comma-separated,
+  moved up to the heading.
+
+  **Not on a phone.** A 24px button and a 26px field are hard to hit with a thumb, where the
+  guidance is nearer 44px, so mobile keeps the tighter rhythm and gets its controls and their
+  labels back at full size.
+
+  Scoped to this plugin's own modals: Obsidian's, and every other plugin's, are untouched.
+
+- **A class's options are in three sections that mean something.** The modal had exactly one
+  heading, `Sync to base`, and it sat above the base rows *and* the four binding rows — so
+  `Map with tag`, `Tag names`, `Files paths` and `Bookmark groups` read as settings of a base
+  they have nothing to do with. Now: **Identity** (Extends, Excludes, Icon), **Bound notes**
+  (how notes other than those naming it get the class), **Sync to base** (the base file, its
+  managed view, and the sync status). Each heading says what it covers, and the
+  order follows the questions — what the class is, which notes carry it, where its fields are
+  mirrored.
+
+### Added
+
+- **A note's fields say where they come from, both ways round.** Hovering a fileClass in the
+  note-fields footer already marked the rows of the fields it declares. The opposite question —
+  *where does this field come from?* — was left to a tooltip, on the surface where it matters
+  most: a note bound to two classes, one of them inheriting from a third. Hovering a row now
+  marks the class that declares it, in the footer, with the same accent bar laid under the
+  name. An ancestor lights up in every breadcrumb it appears in, since `Media` under `Book`
+  and `Media` under `Album` are one declaration.
+
+- **`Excludes` picks from the parent's fields.** The inherited fields a class drops were a
+  comma-separated box, where a misspelling excluded nothing and said nothing — the same silence
+  `Extends` had. What a class may exclude is a finite, known list, so the list is now the
+  interface: a picker over its ancestors' field names, with the count and the current
+  exclusions readable on the row. With no parent it says so instead of offering an empty box.
+  An exclusion that no longer resolves stays offered and marked, because dropping it would
+  silently re-inherit a field somebody deliberately removed. It sits **directly under
+  `Extends`**, since what it offers is that parent's own fields: apart, the two rows read as
+  unrelated settings.
+
+- **`Extends` is a dropdown, and opens the class it names.** It was a free-text box, and a
+  wrong parent was completely silent: `extends: Medai` inherited nothing, listed an ancestor
+  nothing answers to, and said not a word. There is no case for typing a free name — a parent
+  that doesn't exist inherits nothing — so it is now a list of the classes you have, never
+  this one and never one that already inherits from it, which would be a cycle. A declaration
+  that no longer resolves is **kept in the list and marked** (`Medai (no such fileClass)`)
+  rather than quietly replaced by "no parent".
+
+  Beside it, a **way through to the parent's schema**, shown only when the name resolves. A
+  class's editor lists its **own** fields only: showing an ancestor's would beg the question
+  of which copy you are editing, so one click to the parent answers it instead.
+
+  `Extends` also comes first in that modal now. Obsidian focuses a modal's first control, and
+  the Icon field's suggester opens on focus — so opening a class's options greeted you with
+  the icon picker every time.
+
+- **A required field says so where it matters.** `required` lived only inside a field's own
+  definition modal, so a class of a dozen fields hid which ones were mandatory behind a dozen
+  clicks — and the surfaces where fields actually get filled said nothing at all. A schema row
+  now reads `File · required`, and a required field with no value **colours its own action
+  icon red**, in the note-fields modal and in Obsidian's Properties panel, with *required* in
+  the tooltip. Nothing is blocked, as before: the flag is a statement, not a gate.
+
+- **Movable modals, behind a setting** (*Settings → Fileclass → Movable modals*), **off by
+  default.** Everything in the three entries below is that one toggle: it is experimental,
+  desktop-only, and its CSS half neutralises Obsidian's own full-window modal backdrops — a
+  surface every plugin shares — so it stays opt-in until it has been lived with. Off, nothing
+  about Obsidian's modals changes: measured, both ways.
+
+- **Modals can be moved.** A modal is centred, and what it hides is often what you need to
+  read while filling it in. Drag one **by its title**; the cursor over the title says so.
+  It can't be lost: a recognisable piece always stays on screen — 120px, chosen by looking
+  at 48px and finding that the modal read as *gone* — and the title never goes above the
+  top edge, since that is what you would grab to bring it back. Position isn't remembered:
+  the next modal opens centred. **Desktop only**, because the handle would otherwise take
+  over touch gestures on the title and cost you scrolling a modal with your thumb.
+
+- **A stack of modals reads as a stack.** A modal opening over another lands slightly off
+  it — down and to the right, stopping after a few levels — so you can see there are
+  several and grab the one underneath. Dragging one replaces that offset.
+
+- **And a stack dims the app once**, not once per modal. Obsidian gives every modal its own
+  backdrop covering the whole window, so three modals darkened it three times over and the
+  ones below came out washed out. Only the first backdrop is kept.
+
+- **Any modal of a stack can be moved, not just the top one.** Those full-window backdrops
+  swallowed every click aimed at a modal underneath even once invisible — and so did their
+  containers. Both are click-through now, with **everything they hold** put back in the way —
+  a picker is a `prompt`, not a `modal`, and naming only the latter made every suggestion in
+  a File field's picker unclickable. One
+  deliberate consequence: while modals are stacked, clicking the dim area closes nothing,
+  since the click would otherwise land on the modal at the bottom of the stack — the one the
+  others were opened from. A single modal still closes on an outside click, and Escape always
+  closes the top one.
+
+### Fixed
+
+- **A field button's tooltip names the plugin the way its commands do.** It read
+  `Edit "author" — File (Fileclass)`, and that trailing parenthesis was taken for a
+  placeholder left unsubstituted — reasonably, since in this plugin's vocabulary a
+  parenthesis after a field is where a **fileClass name** would belong. It now reads
+  `Fileclass: Edit "author" — File`, like every entry the plugin puts in the command
+  palette. Same fix on the schema shortcut, the next-date affordance and the field-settings
+  wrench.
+
+## [0.2.6] - 2026-08-04
+
+### Changed
+
+- **A `JSON` field stores JSON.** It used to parse your text and hand the *structure* to
+  frontmatter, which Obsidian then wrote as YAML — so nothing on disk was ever JSON and the
+  type was a notation for the editor only. A `JSON` field now stores the **text**, which
+  Obsidian writes as a block scalar (`tech: |-`), so a payload keeps the formatting it came
+  with. Measured: a multi-line string is emitted as a block, a block already in the file
+  survives a write elsewhere in the note untouched, and the cache gives the exact text back.
+  The trade-off is the point of having two types: **YAML** stores a real structure, which a
+  base can reach into through a formula; **JSON** keeps the bytes and is opaque to Bases. A
+  field that already holds a mapping keeps working — it opens as pretty-printed JSON, and
+  becomes text on the next save.
+
+### Added
+
+- **Convert between the two notations, when it applies.** Changing a field's type doesn't
+  rewrite what it holds, so a `JSON` field can open on YAML (and the reverse). The editor
+  then offers *Convert from YAML* — and the offer appears and disappears as you type, since
+  it is only ever shown for text that reads as the other notation.
+
+### Added
+
+- **A duration reads as a duration in Obsidian's Properties panel.** `PT45M44S` is the
+  right thing on disk and unreadable on screen, so the human form is now shown next to the
+  stored value — never over it: Obsidian's value there stays editable, and overwriting its
+  text would risk writing `45m 44s` back into your frontmatter. A single value gets its
+  reading beside it; an **interval sequence gets one reading inside each pill**, just left
+  of the pill's remove button, so it names the value it reads instead of summarising the
+  list from a distance. Surfaces that already read well — the note-fields modal, a field
+  menu — show nothing extra, and the editable `fileclass-table` gains the reading like the
+  panel.
+
+- **A field's edit button stays on the property's first line.** It was centred in the row,
+  so on a property whose value is a stacked list it drifted to the middle line, away from
+  the name it acts on.
+
+### Fixed
+
+- **Raw text no longer disappears on Escape.** The `JSON`/`YAML` editor is where the most
+  typing happens and it was the last one without a guard: Escape or the close button threw
+  a blob away in silence. It now shows **Unsaved changes** in its footer and asks — *Keep
+  editing*, *Discard* or *Save* — like every other editor since 0.2.4.
+
+- **The parser answers while you type.** An invalid document was only reported when you
+  asked to save, so a mistake twenty lines up was learned about on the way out. The error
+  — with its line, its column and a caret under the spot — now appears as you type, and an
+  empty box stays what it is: the way to clear the field.
+
+### Changed
+
+- **A declared raw field is not a warning.** Obsidian paints a nested value it can't
+  interpret in its warning colour. That is right for a value nobody can make sense of and
+  wrong for a `JSON`/`YAML` field a class declares and round-trips through an editor — as
+  it already was for groups. The value itself stays raw on screen, which for these two
+  types is the honest answer.
+
+- **A structured value says how much is inside.** `{…}` told you nothing; a value now
+  reads as **3 keys** or **5 items** wherever there is no room to show it whole.
+
+## [0.2.5] - 2026-08-03
+
+### Fixed
+
+- **A property control acts on the note in front of you.** Obsidian recycles the rows of
+  its Properties panel — switching notes keeps the elements and rewrites their contents —
+  and Fileclass only rebuilt its button when the property *name* changed. So on two notes
+  sharing a property, the button stayed behind with the first note captured inside it:
+  the `editions` control of one book opened another book's list (reported from a real
+  vault), and a `Cycle` or a `Boolean` would have written to the wrong note **in
+  silence**, with no modal to show it. The note and the field are now read from the row
+  at the moment of the click, and the button is rebuilt when either the note or the
+  field's type changes — which also keeps its icon and its label honest.
+
+- **A child field whose name matches a root field no longer disappears.** A class holds
+  its nested children in the same list as its root fields, told apart by their `path`,
+  and the resolver de-duplicated that list by **name alone**. So a `Book` with a
+  `publisher` and an `editions` list whose items each have their own `publisher` lost
+  the child: it was absent from the resolved schema, and nothing offered it when adding
+  an item — reported from a real vault. A field is now identified by its name **at its
+  level**, so the same word can name a root field and a child of a group. Overriding an
+  inherited child still works, at its own level. `excludes` follow the same rule: they
+  name a field of a class, which is a root field, and a group's children go with their
+  parent rather than with a word.
+
+- **An item you start and abandon is no longer written.** *Add item* on an `ObjectList`
+  pushed an empty item into the draft **before** opening its editor, and cancelling that
+  editor didn't take it back: nothing showed it — the list still read two rows, the
+  *Unsaved changes* line stayed quiet — and the next Save wrote `{}` into the
+  frontmatter, where it came back as a phantom third item. An item now exists only once
+  its editor is saved.
+
+- **An empty item reads as empty, not as punctuation.** With a display template, an item
+  holding nothing rendered as the template's own separators — a lone `·` — which reads
+  as a value. A template with nothing to fill it now renders nothing, so the surfaces
+  say *(empty)* in their own words, and a list summarises such an item as
+  `2. (empty)` rather than as a bare rank.
+
+## [0.2.4] - 2026-08-03
+
+### Fixed
+
+- **A group's children are reachable from the field itself.** *Children* was a button
+  on the schema screen only, so the other doors into a field's definition — Alt-clicking
+  its type icon in the note-fields modal, above all — could not get to them. The field's
+  own settings now carry the action, for `Object` and `ObjectList`, and it appears as
+  soon as you pick one of those types rather than after a save and a detour.
+
+- **The first row's focus ring is no longer cut off.** A modal's title is sticky with
+  an opaque background, so it painted *over* the top of the ring on the first field —
+  not a clipping problem but an overlap, which is why it only ever affected that one
+  row. The field list keeps room for it now, and `scroll-padding` means a row the arrow
+  keys scroll to doesn't park under the title either.
+
+- **The breadcrumb names the group you are in.** Editing the children of a nested
+  group said *Book › children* at every depth, so two levels of nesting looked
+  identical — and the children of a group are exactly where you need to know which
+  group. It now reads *Comic › storage › shelf › children*, and the field editor's
+  title names the field instead of saying "Edit field".
+
+- **Closing a modal with unsaved changes asks instead of discarding.** Nothing said
+  whether Save was needed, so Escape or the close button threw a half-filled field
+  definition away in silence. A modal holding a draft now shows **Unsaved changes** at
+  the left of its pinned footer, on the Save button's line, the moment the draft differs
+  from what it opened on — so a long list can't scroll the warning out of sight — and
+  closing it offers *Keep editing*, *Discard* or *Save* — Escape, the X and a click
+  outside all go through the same door. An untouched modal still closes without a word.
+  So far: a field's definition, a group's values, and an `ObjectList`'s items.
+
+- **The arrow keys move through a field list.** Every row of the schema editor
+  contributes four or five tab stops — fifty-five in a class of a dozen fields — so
+  reaching the eighth field's *Edit* was thirty-odd presses of Tab. ↓ / ↑ now move to
+  the same action on the next field, → / ← between that field's actions, Home / End to
+  the ends, and the whole list is a single tab stop. Moving down keeps the *action*,
+  not the column: a group carries an extra **Children** button, so ↓ from *Edit* lands
+  on *Edit* rather than sliding onto *Remove*. Every modal that lists rows carrying the
+  same actions has it: the note-fields modal, the schema editor, an object's children
+  list, and the value editors of an `Object` and an `ObjectList`.
+
+- **A valid group is no longer painted as a warning.** Obsidian can't interpret a
+  nested property, so it colours the value in `--text-warning` — right for a value
+  nobody can make sense of, wrong for a group a fileClass declares and validates. The
+  warning colour is dropped when the field is an `Object`/`ObjectList` **and** the
+  value passes validation; a group that doesn't keeps it, because there the warning is
+  the truth.
+
+- **A group's display template now reaches Obsidian's Properties panel.** A nested
+  property showed there as raw JSON — `{"name":"Chilton Books","city":"Philadelphia"}`
+  — while every Fileclass surface showed the template's summary. When a display
+  template is set, the panel shows that summary too, keeping the JSON in the tooltip.
+  Obsidian types a mapping as `unknown` and renders it read-only, so nothing editable
+  is replaced; without a template, the panel is left exactly as it was.
+
+- **A value that isn't a group is no longer thrown away.** Give a field the `Object`
+  type and the value it already held — a plain string, say `publisher: Chilton Books`
+  — became invisible: the row showed nothing, validation called it fine, the editor
+  opened empty, and the next save replaced it with `{}` without a word. It is now
+  shown wherever values show, reported as a violation ("must be a group of
+  properties"), displayed in the editor as **Current value, not a group yet**, and
+  kept when you save an empty group — removing it takes an explicit *Clear*. Same for
+  `ObjectList`, whole and per item.
+
+## [0.2.3] - 2026-08-03
+
+### Fixed
+
+- **The coordinates box reads what you actually paste.** It accepted the canonical
+  `lat,lon` and nothing else — a Google or Apple Maps link, an OpenStreetMap link, a
+  `geo:` URI, a degree-marked pair like `48.8584° N, 2.2945° E`, even a space between
+  the two numbers all filled **nothing at all, without a word**. All of those are read
+  now; text that holds no pair says so, and a pair that is off the globe is told apart
+  from one that couldn't be read, because those are different mistakes.
+
+- **The "Set next date" button had no label.** `setIcon()` on an Obsidian button
+  replaces its content, so the text set just before it never rendered: the picker
+  showed an icon with no name — nothing on hover, nothing for a screen reader. It
+  reads *Set next date* again, with a tooltip; the skip-forward icon stays where it
+  belongs, on the field's own control under Alt.
+
+- **Colour pickers open the way Obsidian's own does.** Every colour control was an
+  invisible `<input type="color">` (`opacity: 0`, absolutely positioned) inside a
+  `<label>` that activated it — and opening its popover from the settings window
+  emptied the settings pane behind it, leaving the tab selected with nothing in it.
+  Obsidian's accent-colour setting, which behaves, is a plain **visible** input
+  sitting directly in its row; ours are now the same thing, shaped into the same
+  circles by CSS, with the "add" mark moved to a corner badge that never takes the
+  click. The swatch inside each one fills a square box, so it is a circle rather than
+  the ellipse a 50% radius draws on Obsidian's 26x22 default, and the two pickers in
+  a field's palette keep their distinct rings — dashed for *add to my colors*,
+  rainbow for a one-off shade — with the chosen colour inset inside them. Three places changed: the palette in the settings, the field picker, and
+  the canvas colour options.
+
+- **The icon picker shows the icon you already have.** It renders 240 of some 1900
+  icons in alphabetical order, so a value like `rocket` was simply absent from the
+  first screen: the picker never displayed the value it was editing, and you had to
+  search for what you already had in order to see it. The current icon and its id now
+  sit above the search box, and the grid still marks it when it comes into view.
+
+## [0.2.2] - 2026-08-02
+
+### Fixed
+
+- **A templated field shows the value you already had.** The guided form's preview is
+  the value being built, and the first control you touch rewrites it — so for a value
+  that predates the template, and therefore fills no control, the preview was the only
+  copy of it and it vanished on the first keystroke. The stored value now sits above
+  the controls as **Current value**, selectable and never rewritten.
+
+- **Editing one part of a templated value no longer wipes the others.** The guided
+  form for a templated `Input` opened with blank controls, so touching any of them
+  re-rendered the template from empty parts: correcting the shelf number in
+  `Study · A-3` stored ` · -7` and lost the room. The form now reads the stored value
+  back into its parts — literals escaped, one capture per placeholder, a dropdown
+  matched against its own choices — and a value that doesn't fit the template still
+  falls back to empty controls, as before.
+
+## [0.2.1] - 2026-08-02
+
+### Fixed
+
+- **A generated base returned nothing for a class bound by folder or tag.** The
+  managed view filtered on the class property alone — `fileClass == "Author"` — and
+  a note bound by **Files paths** or by tag carries no such property, so the view
+  was empty for every folder-mapped class. The filter now matches every binding it
+  can express: the property, `file.inFolder()` per mapped folder (by prefix, so
+  subfolders count — an equality on the folder missed them), and `file.hasTag()` per
+  tag, `or`-ed together. Bases generated before their class was mapped are repaired
+  on the next sync, unless their filter was edited by hand, in which case it is left
+  alone. Bookmark groups and Base-view bindings have no Bases equivalent and stay
+  outside the filter; the docs say which.
+
+- **A nested tag now binds to the class its parent tag maps.** A note tagged
+  `#author/french` was left untyped while a class mapped on `author` claimed
+  `#author`, and the generated view listed it anyway — Bases' `file.hasTag()`
+  includes children, as do Obsidian's tag search and tag pane. The resolver now
+  matches a tag and every tag it nests under, most specific first, so the view and
+  the binding agree. More notes are typed; none loses its typing.
+
+- **The `Template` option said what it was, not what it wasn't.** It read *"compose
+  each value from fixed parts"* — which is what someone defining a list of allowed
+  values believes they want — and never mentioned `Select`/`Multi`. Both the setting
+  and the docs now name the two types that limit a field to values you choose,
+  before explaining template syntax.
+
+- **Turning Bases on after Fileclass no longer needs a restart.** Feature detection
+  ran once, at layout-ready, and nothing re-ran it: a vault where the core Bases
+  plugin was switched on later kept File/Media candidates and generated views
+  disabled for the rest of the session, with no way to tell why. Fileclass now
+  re-detects whenever a core plugin is toggled.
+
+- **A generated base could report `Unknown view type: fileclass-table`.** The
+  editable view is registered once, when Bases is available; a session that missed
+  that moment rendered every base Fileclass had generated as an error — on a file
+  Fileclass wrote itself. Registration is retried whenever Bases becomes available,
+  and a failure is logged instead of being swallowed. (The view type still needs
+  Fileclass enabled to render, as any plugin-provided Bases view does.)
+
+## [0.2.0] - 2026-08-01
 
 ### UI
+
+- **A field's settings, one Alt-click from the note.** In the note-fields modal, Alt
+  over a row's type icon turns it into a wrench and Alt-clicking it opens that
+  field's definition editor. Changing one option of a field you are looking at used
+  to mean leaving the note, opening its fileClass and finding the field again. The
+  write goes to the fileClass note that declares it — the ancestor, for an inherited
+  field — and a dependent field's formula is regenerated from this door too.
+
+- **A dependent field builds its own filter** (#19). Pick the field to depend on and
+  the property to match, and Fileclass writes the formula into the bound base and
+  points the field at a **narrowed copy of the view you chose** — its filters, sort
+  and order, plus the predicate — with a preview of both before you save.
+  Hand-authoring that meant knowing `this.<Property>` resolves to the edited note,
+  choosing a value or a link comparison, and remembering the `.isTruthy()` guards
+  without which an empty-vs-empty comparison is `true` and the picker offers every
+  value-less candidate. Names come from the predicate, so regenerating converges
+  instead of accumulating, and everything else in the base is left alone.
+
+- **Removed: the `embed` option** on `Media`/`MultiMedia`. It wrote `![[cover.png]]`
+  instead of `[[cover.png]]`, which made sense in Metadata Menu — its fields could
+  live **inline in the note body**, where an embed renders. In frontmatter it renders
+  nothing, and the marker costs you three things, all measured: Obsidian doesn't
+  register an embedded value as a link, so **a rename leaves it dangling** while a
+  plain link is rewritten; it is absent from the graph; and a Bases `image` column
+  shows nothing for it. Values already stored as embeds keep resolving wherever
+  Fileclass reads them — thumbnails, candidates, pre-selection.
+
+- **Image values show as thumbnails** — in the `Media`/`MultiMedia` picker, and
+  beside the value in the note-fields modal, the Properties row and table cells. A
+  media field points at a picture; every surface used to show its file name.
 
 - **Focus rings are no longer clipped** in Fileclass's modals. Their bodies scroll,
   which clips sideways too, and a switch at the right edge sat flush against it —
@@ -105,6 +523,17 @@ All notable changes to Fileclass are documented here. The format follows
   never is — the explicit command stays available. Turn it off with **Insert fields
   when adding a class** (Settings → Fileclass → Behavior).
 
+
+- **One gesture per field type, on every control.** A `Cycle` advanced to its next
+  value in the note-fields modal but opened a value picker everywhere else — in the
+  Properties editor and in editable table cells — under a `rotate-cw` icon that
+  promised the advance. The gesture is now decided by the type alone and shared by
+  all three surfaces: `Cycle` writes the next allowed value, `Boolean` flips, every
+  other type opens its typed input. **Alt-click** opens the input wherever the
+  gesture writes a value directly, so an explicit choice is always one modifier
+  away. The button's label names what it will do ("Next value", "Toggle", "Edit")
+  instead of a generic *Edit*.
+
 ### Settings
 
 - **Date formats show what they write, and say when they're wrong.** Every input
@@ -153,18 +582,6 @@ All notable changes to Fileclass are documented here. The format follows
   click shows `Min` itself (0 when there is no minimum), so it always lands on a
   legal value; the result is clamped to `Min`/`Max`, and a fractional step stays
   clean (0.1 + 0.2 → 0.3).
-
-### UI
-
-- **One gesture per field type, on every control.** A `Cycle` advanced to its next
-  value in the note-fields modal but opened a value picker everywhere else — in the
-  Properties editor and in editable table cells — under a `rotate-cw` icon that
-  promised the advance. The gesture is now decided by the type alone and shared by
-  all three surfaces: `Cycle` writes the next allowed value, `Boolean` flips, every
-  other type opens its typed input. **Alt-click** opens the input wherever the
-  gesture writes a value directly, so an explicit choice is always one modifier
-  away. The button's label names what it will do ("Next value", "Toggle", "Edit")
-  instead of a generic *Edit*.
 
 ## [0.1.1] - 2026-07-26
 

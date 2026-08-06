@@ -10,6 +10,12 @@ import { App, Setting } from "obsidian";
 import { Field, FieldType } from "../../schema/field";
 import { intervalFieldChoices, isIntervalField } from "../intervalChoices";
 import {
+	conditionalViewName,
+	dependencyChoices,
+	hasDependency,
+	matchFormula,
+} from "../conditional";
+import {
 	BaseColumnSuggest,
 	BaseFileSuggest,
 	BaseViewSuggest,
@@ -28,6 +34,8 @@ import { chainRowInput, returnFocusTo } from "../../ui/listKeyboard";
 
 export interface FieldOptionsCtx {
 	app: App;
+	/** The field being edited — excluded from the fields it may depend on. */
+	fieldName?: string;
 	/** Plugin-wide write formats, to name the fallback under "Date format". */
 	dateDefaults?: DateFormatDefaults;
 	/**
@@ -57,9 +65,11 @@ export function renderFieldOptionsSettings(
 			new Setting(container)
 				.setName("Template")
 				.setDesc(
-					'Optional. Compose each value from fixed parts. {{name}} is a text sub-input; ' +
-						'{{name:["a","b"]}} is a dropdown over the JSON array of choices. When set, entry ' +
-						"shows one control per placeholder plus a live preview; each stored value stays a " +
+					"Optional — a shape for each value, not a list of allowed values. To limit a field " +
+						"to values you choose, use Select or Multi instead. In a template, {{name}} is a " +
+						'free-text part and {{name:["a","b"]}} a dropdown over that JSON array. When set, ' +
+						"entry shows one control per placeholder plus a live preview; each stored value " +
+						"stays a " +
 						(type === "MultiInput" ? "single string (one per list item)." : "single string.")
 				)
 				// Stack the textarea full-width under the label (it's cramped in the
@@ -210,7 +220,7 @@ export function renderFieldOptionsSettings(
 		case "MultiFile":
 		case "Media":
 		case "MultiMedia":
-			renderLinkSettings(container, type, draft, ctx);
+			renderLinkSettings(container, draft, ctx);
 			return;
 		case "Canvas":
 		case "CanvasGroup":
@@ -239,7 +249,6 @@ export function renderFieldOptionsSettings(
 
 function renderLinkSettings(
 	container: HTMLElement,
-	type: FieldType,
 	draft: OptionsDraft,
 	ctx: FieldOptionsCtx
 ): void {
@@ -266,12 +275,77 @@ function renderLinkSettings(
 			t.setValue(draft.displayColumn ?? "").onChange((v) => (draft.displayColumn = v))
 		);
 
-	if (type === "Media" || type === "MultiMedia") {
-		new Setting(container)
-			.setName("Embed")
-			.setDesc("Store the value as an embed (![[…]]).")
-			.addToggle((t) => t.setValue(!!draft.embed).onChange((v) => (draft.embed = v)));
-	}
+	renderDependency(container, draft, ctx);
+}
+
+/**
+ * "Depends on another field" (#19): the author picks the source field and the
+ * property to match, and Fileclass writes the formula and the view into the bound
+ * base on save. The preview is the point — the generated predicate is visible
+ * before saving, instead of being discovered later inside the `.base`.
+ */
+function renderDependency(
+	container: HTMLElement,
+	draft: OptionsDraft,
+	ctx: FieldOptionsCtx
+): void {
+	const classFields = ctx.classFields ?? [];
+	const self = ctx.fieldName ?? "";
+	const choices = dependencyChoices(classFields, self, draft.dependsOn);
+	const eligible = choices.filter((c) => c.value && !c.label.endsWith("(not found)"));
+
+	let refresh = (): void => undefined;
+
+	new Setting(container)
+		.setName("Depends on another field")
+		.setDesc(
+			eligible.length
+				? "Optional. Narrows the candidates to those matching this note's value for that field."
+				: "Optional. This fileClass has no other single-valued field to depend on yet."
+		)
+		.addDropdown((d) => {
+			for (const c of choices) d.addOption(c.value, c.label);
+			d.setValue(draft.dependsOn ?? "").onChange((v) => {
+				draft.dependsOn = v;
+				// The candidate side is usually named like the source field.
+				if (v && !draft.matchProperty?.trim()) draft.matchProperty = v;
+				refresh();
+			});
+		});
+
+	const matchSetting = new Setting(container)
+		.setName("Match on property")
+		.setDesc("Property on the candidate side, compared against that value.");
+	matchSetting.addText((t) => {
+		t.setPlaceholder("(same name)")
+			.setValue(draft.matchProperty ?? "")
+			.onChange((v) => {
+				draft.matchProperty = v;
+				refresh();
+			});
+		new BaseColumnSuggest(
+			ctx.app,
+			t.inputEl,
+			() => draft.baseFile ?? "",
+			() => draft.viewName ?? ""
+		);
+	});
+
+	// What will be written, in the base's own language.
+	const previewEl = container.createDiv({ cls: "fileclass-format-preview" });
+	refresh = () => {
+		const source = draft.dependsOn?.trim();
+		const match = draft.matchProperty?.trim();
+		matchSetting.settingEl.toggleClass("fileclass-setting-off", !source);
+		previewEl.empty();
+		if (!hasDependency(source, match)) return;
+		const sourceType =
+			classFields.find((f) => f.name === source)?.type ?? ("Input" as FieldType);
+		const spec = { source: source as string, sourceType, match: match as string };
+		previewEl.createSpan({ cls: "fileclass-format-sample", text: conditionalViewName(spec) });
+		previewEl.createEl("code", { cls: "fileclass-formula", text: matchFormula(spec) });
+	};
+	refresh();
 }
 
 function renderDurationPresets(container: HTMLElement, draft: OptionsDraft, app: App): void {
