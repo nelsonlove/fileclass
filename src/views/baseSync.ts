@@ -24,13 +24,31 @@ import {
 import type FileclassPlugin from "../../main";
 import { isRootField } from "../schema/field";
 import { FileClassOptions } from "../schema/fileClass";
-import { buildBaseYaml, isBaseViewSynced, mirrorBaseView } from "./baseYaml";
+import { buildBaseYaml, ClassScope, isBaseViewSynced, mirrorBaseView } from "./baseYaml";
 
 export type BaseSyncStatus = "none" | "synced" | "diverged";
 
 /** fileClass options from the index (`.fileclass` files are not in metadataCache). */
 function liveOptions(plugin: FileclassPlugin, name: string): FileClassOptions | undefined {
 	return plugin.index.getFileClass(name)?.options;
+}
+
+/**
+ * What the generated view filters on: the class property, plus every folder and
+ * tag that binds a note to this class. Read live, like the rest of `liveOptions`
+ * — a class mapped to a folder a second ago must produce a view that sees it.
+ */
+function classScope(plugin: FileclassPlugin, name: string): ClassScope {
+	const options = liveOptions(plugin, name);
+	const tags = [...(options?.tagNames ?? [])];
+	// `mapWithTag` means the class name itself is the tag (single-word only).
+	if (options?.mapWithTag && !name.includes(" ")) tags.push(name);
+	return {
+		alias: plugin.settings.fileClassAlias,
+		name,
+		tags,
+		folders: options?.filesPaths ?? [],
+	};
 }
 
 /** Managed view name for a fileClass (its `baseView`, else its own name). */
@@ -71,7 +89,12 @@ export async function baseSyncStatus(plugin: FileclassPlugin, name: string): Pro
 	if (!(file instanceof TFile)) return "diverged"; // missing → needs sync (create)
 	try {
 		const base: unknown = parseYaml(await plugin.app.vault.read(file));
-		return isBaseViewSynced(base, managedViewName(plugin, name), rootFieldNames(plugin, name))
+		return isBaseViewSynced(
+			base,
+			managedViewName(plugin, name),
+			rootFieldNames(plugin, name),
+			classScope(plugin, name)
+		)
 			? "synced"
 			: "diverged";
 	} catch {
@@ -92,12 +115,12 @@ export async function applyBaseSync(
 ): Promise<void> {
 	const app = plugin.app;
 	const fields = rootFieldNames(plugin, name);
-	const alias = plugin.settings.fileClassAlias;
+	const scope = classScope(plugin, name);
 	const file = app.vault.getFileByPath(path);
 
 	if (!(file instanceof TFile)) {
 		await ensureParentFolder(plugin, path);
-		await app.vault.create(path, buildBaseYaml(name, fields, alias, view));
+		await app.vault.create(path, buildBaseYaml(scope, fields, view));
 		new Notice(`Fileclass: created ${path}`);
 		return;
 	}
@@ -119,11 +142,11 @@ export async function applyBaseSync(
 	// Empty or malformed on disk (no views): initialize a full base rather than
 	// silently doing nothing.
 	if (!isBaseWithViews(base)) {
-		await app.vault.modify(file, buildBaseYaml(name, fields, alias, view));
+		await app.vault.modify(file, buildBaseYaml(scope, fields, view));
 		new Notice(`Fileclass: initialized ${path}`);
 		return;
 	}
-	if (mirrorBaseView(base, view, fields, name, alias)) {
+	if (mirrorBaseView(base, view, fields, scope)) {
 		await app.vault.modify(file, stringifyYaml(base));
 	}
 	new Notice(`Fileclass: synced ${path}`);
@@ -139,7 +162,7 @@ function isBaseWithViews(base: unknown): boolean {
 }
 
 /** Leaves currently displaying the .base at `path` (any registered view type). */
-function openBaseLeaves(app: App, path: string): WorkspaceLeaf[] {
+export function openBaseLeaves(app: App, path: string): WorkspaceLeaf[] {
 	const leaves: WorkspaceLeaf[] = [];
 	app.workspace.iterateAllLeaves((leaf) => {
 		if (leaf.getViewState().state?.file === path) leaves.push(leaf);
@@ -152,7 +175,7 @@ function openBaseLeaves(app: App, path: string): WorkspaceLeaf[] {
  * a Bases leaf flushes its in-memory layout. Resolves on the first `modify` of
  * the file, or after a short timeout so a no-op close can't hang the sync.
  */
-function detachAndAwaitSave(app: App, file: TFile, leaves: WorkspaceLeaf[]): Promise<void> {
+export function detachAndAwaitSave(app: App, file: TFile, leaves: WorkspaceLeaf[]): Promise<void> {
 	return new Promise((resolve) => {
 		let done = false;
 		const finish = (): void => {
@@ -171,7 +194,7 @@ function detachAndAwaitSave(app: App, file: TFile, leaves: WorkspaceLeaf[]): Pro
 }
 
 /** Confirms closing an open base before syncing. Resolves true on confirm. */
-function confirmCloseOpenBase(app: App, fileName: string): Promise<boolean> {
+export function confirmCloseOpenBase(app: App, fileName: string): Promise<boolean> {
 	return new Promise((resolve) => {
 		const modal = new Modal(app);
 		modal.titleEl.setText("Base is open");

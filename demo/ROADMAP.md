@@ -17,6 +17,17 @@ either — driving a terminal with burned-in subtitles isn't tooling we have, an
 its audience reads the docs. "Coming from Metadata Menu" and "which level of
 normalization" belong in a GitHub discussion thread, not in a video.
 
+## Tour
+
+One take before the arcs, and the only one that shows the whole plugin end to end.
+
+| # | Take | Feature | Vault gains | Status |
+| - | ---- | ------- | ----------- | ------ |
+| 000 | Tour #1 — from an untyped vault to a typed library | install, class folder, a class bound by folder, `File` candidates narrowed by another field | untyped library + `Authors/` + `Authors.base` | ✅ [published](https://www.youtube.com/watch?v=rScC86I2vlg) |
+
+It is deliberately the exception to the 60-second rule (~5 min), and it can only be
+recorded once the store carries the release with #19 — the install happens on camera.
+
 ## The cast
 
 The vault is a media library, and it's the *same* library across the whole
@@ -63,29 +74,30 @@ thread, and a tight smoke test of that type's input path.
 | - | ---- | ------- | ----------- | ------ |
 | 012 | Link a note to another note | `File` (candidates from a base) | `Author` class + notes, `Authors.base` | ✅ [published](https://www.youtube.com/watch?v=orwUfnJCWT4) |
 | 013 | Translators, illustrators, several links | `MultiFile`, filter box | `Comic` class, Tintin typed, `Comic.contributors`, 15 people | ✅ [published](https://www.youtube.com/watch?v=t7avhsV-ZXk) |
-| 014 | Covers and attachments | `Media`, `MultiMedia` | `Book.cover` | |
-| 015 | Candidates that depend on another field | conditional candidates | `Comic.series` | |
+| 014 | Covers and attachments | `Media`, `MultiMedia`, thumbnails | `Images/` + `Images.base`, `Book.cover` | ✅ [published](https://www.youtube.com/watch?v=HtjfEO19p-g) |
+| 015 | Candidates that depend on another field | conditional candidates (guided, #19) | `Series` class + `Series.base`, `Comic.series` | ✅ [published](https://www.youtube.com/watch?v=862i7fYe5Iw) |
 
 ## Arc 4 — the richer types
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 016 | Templated input | `Input` template (`{{placeholder}}`) | `Book.shelf` | |
-| 016b | Dates as links to your daily notes | `Date` insert-as-link, templated `Link path`, `Link alias` | `Book.published` as a daily-note link | |
-| 017 | Pick an icon | `Icon` | `Media.icon` | |
-| 018 | Colors, and your own palette | `Color`, custom colors | `Book.genre` color | |
-| 019 | A place on a map | `Location` | `Activity.branch` | |
-| 020 | A group of fields inside a field | `Object` | detailed `Book.publisher` | |
-| 021 | A list of grouped fields | `ObjectList`, display template | `Book.editions` | |
-| 022 | When raw is the honest answer | `JSON`, `YAML` | `Album.credits` | |
+| 016 | Templated input | `Input` template (`{{placeholder}}`) | `Book.shelf` | ✅ [published](https://www.youtube.com/watch?v=OmUgluPZal0) |
+| 016b | Dates as links to your daily notes | `Date` insert-as-link, templated `Link path`, `Link alias` | `Book.review` as a daily-note link, `Daily/` | ✅ [published](https://www.youtube.com/watch?v=2eVs2J0vv6A) |
+| 017 | Pick an icon | `Icon` | `Series.icon`, five series told apart | ✅ [published](https://www.youtube.com/watch?v=TvkZfCN5rgo) |
+| 018 | Colors, and your own palette | `Color`, custom colors | `Series.color`, a saved palette | ✅ [published](https://www.youtube.com/watch?v=8t8ZaCpv9ks) |
+| 019 | A place on a map | `Location`, the Maps plugin | `Activity.branch`, four located dates | ✅ [published](https://www.youtube.com/watch?v=Hev8hrBxWj0) |
+| 020 | A group of fields inside a field | `Object`, nested properties | `Comic.storage`, a group of groups, two more albums | ✅ [published](https://www.youtube.com/watch?v=9fRoZEE2xfI) |
+| 021 | A list of grouped fields | `ObjectList`, display template | `Book.editions` | ✅ [published](https://www.youtube.com/watch?v=xHIVXu8LiEE) |
+| 022 | When raw is the honest answer | `JSON`, `YAML` | `Album.credits` (YAML), `Album.import` (JSON), a second album | ✅ [published](https://www.youtube.com/watch?v=X3s8wtbPSTU) |
 
 ## Arc 5 — modelling a class
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 023 | Fields you can't leave empty | required fields | `Book.title` required | |
-| 024 | One parent class, three children | inheritance (`extends`) | `Media` → `Book`/`Album`/`Comic` | |
+| 023 | Fields you can't leave empty | required fields | `Book.author` required, James Clear | ✅ [published](https://www.youtube.com/watch?v=7F5BvcUbUAc) |
+| 024 | One parent class, three children | inheritance (`extends`), `excludes`, redeclaring | `Media` → `Book`/`Album`/`Comic`, plus `Movie` and two films | ✅ [published](https://www.youtube.com/watch?v=-bQ6s6M_pkk) |
 | 025 | Two classes on one note | multiple binding, global class, alias | `Article` class | |
+| 025b | Notes a class claims by itself | `Map with tag`, `Tag names`, `Files paths`, `Bookmark groups` — the bindings that type a note without a word in its frontmatter. The take also carries [#121](https://github.com/mdelobelle/fileclass/issues/121): the three lists picked from the vault's own tags, folders and bookmark groups instead of typed | a `Reading list/` folder bound by path, `#album` notes, a bookmark group | |
 
 ## Arc 6 — filling fields fast
 
@@ -96,6 +108,7 @@ thread, and a tight smoke test of that type's input path.
 | 028 | Edit buttons in the properties panel | property edit buttons | — | |
 | 029 | Seeing at a glance what's typed | field indicators (tab, explorer, links, bases) | — | |
 | 030 | Change one field across a whole class | bulk edit (set-where) | — | |
+| 030b | Renaming a field, and every note that carries it | rename with frontmatter migration ([#108](https://github.com/mdelobelle/fileclass/issues/108)) — a Save of its own, listing the notes it will rewrite | `Book.shelf` → `storage` | |
 | 031 | New notes that arrive already typed | Templater / Templates | a Book template | |
 
 ## Arc 7 — Bases views

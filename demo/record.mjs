@@ -39,7 +39,7 @@ import {
 	wipeVault,
 	writeTakeLog,
 } from "./lib/stage.mjs";
-import { CUE_LABEL, connect } from "./lib/subtitles.mjs";
+import { CUE_LABEL, INSERT_LABEL, LIFT_LABEL, connect } from "./lib/subtitles.mjs";
 import { waitForPlugin } from "./lib/trust.mjs";
 import { DEFAULT_RATE, resolveVoice, speak, spokenText } from "./lib/voice.mjs";
 
@@ -172,9 +172,18 @@ async function main() {
 		await stage.waitForVault(vaultPath);
 		// A staged vault is new to Obsidian, which holds its plugins behind a trust
 		// dialog — dismissed here so the take doesn't open with a modal in frame.
-		const { loaded, trusted } = await waitForPlugin(stage);
+		const requirePlugin = scenario.plugin !== false;
+		const { loaded, trusted } = await waitForPlugin(stage, { requirePlugin });
 		if (trusted) console.log(dim("Accepted this vault's trust prompt"));
-		if (!loaded) console.warn(dim("Warning: Fileclass isn't loaded in that vault."));
+		if (!loaded) {
+			console.log(
+				dim(
+					requirePlugin
+						? "Warning: Fileclass isn't loaded in that vault."
+						: "Fileclass isn't installed — this take installs it on camera."
+				)
+			);
+		}
 		console.log(dim(`Opened   "${scenario.vaultName}"`));
 	}
 
@@ -185,8 +194,23 @@ async function main() {
 	// hand, and no fixed countdown survives that in practice.
 	console.log(
 		`\n${bold("Start your screen recorder, then press")} ${bold(CUE_LABEL)} ${bold("in Obsidian to begin.")}\n` +
-			dim(`The same chord advances every step · Enter here also works · q aborts\n`)
+			dim(`The same chord advances every step · Enter here also works · q aborts\n`) +
+			dim(`${LIFT_LABEL} lifts the caption to the top when it covers what you need · next step puts it back\n`) +
+			(scenario.steps.some((s) => s.input.length)
+				? dim(
+						`${INSERT_LABEL} types the next value shown in yellow into whatever field is focused` +
+							` — one press per value\n`
+					)
+				: "") +
+			(scenario.steps.some((s) => s.values.length)
+				? dim(`Values shown in blue are yours to type: no chord will insert them\n`)
+				: "")
 	);
+	// "ready", out loud, before the cue. It tells the operator the take is armed
+	// without looking away from Obsidian — and it pays the voice's one-time cost
+	// (process, voice assets, audio device) off-camera, which is why the first
+	// subtitle used to hear its line about a second late.
+	if (voice) await speak("ready", { voice, rate }).done;
 	await stage.waitForCue();
 
 	// t0 = the starting cue. Every offset in the take log is relative to it, which
@@ -214,7 +238,7 @@ async function main() {
 	}
 
 	for (const [i, step] of scenario.steps.entries()) {
-		await stage.show(step.title);
+		await stage.show(step.title, { input: step.input, values: step.values });
 		const shownAt = at();
 		console.log(`${dim(`${String(i + 1).padStart(2)}/${total}`)}  ${step.title}`);
 		const line = voice ? speak(spokenText(step.title, scenario.pronounce), { voice, rate }) : null;
