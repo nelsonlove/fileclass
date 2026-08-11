@@ -166,3 +166,36 @@ export function resolveExtendsName(
 	const suffixed = `${raw}.fileclass`;
 	return hasName(suffixed) ? suffixed : undefined;
 }
+
+/**
+ * Resolves the **Global fileClass** setting to a canonical registry name.
+ *
+ * Accepts everything `extends` accepts — and for the same reason: this fork made
+ * `[[Name.fileclass]]` the way a class is referred to everywhere else, so that is
+ * the form a user naturally types here too. Delegating to `resolveExtendsName`
+ * rather than re-implementing the match is what keeps the two from drifting; the
+ * earlier version of this resolver handled bare names, suffixed names and paths but
+ * not wikilinks, so a setting of `"[[Default.fileclass]]"` silently resolved to
+ * nothing and the global binding never fired.
+ *
+ * On top of those, one form only this setting can carry: a **path**, from when it
+ * held a `classFilesPath`-style value. Matched on the filename, `.md` tolerated.
+ */
+export function resolveGlobalFileClassName(
+	raw: string | undefined,
+	resolveLinkToName: (link: string) => string | undefined,
+	hasName: (name: string) => boolean
+): string | undefined {
+	const value = raw?.trim();
+	if (!value) return undefined;
+
+	const direct = resolveExtendsName(value, resolveLinkToName, hasName);
+	if (direct) return direct;
+
+	const base = (value.split("/").pop() ?? value).replace(/\.md$/, "");
+	if (base === value) return undefined; // already tried above
+	for (const candidate of [base, `${base}.fileclass`]) {
+		if (hasName(candidate)) return candidate;
+	}
+	return undefined;
+}

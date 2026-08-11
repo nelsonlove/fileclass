@@ -330,8 +330,12 @@ Slim rewrite of MDM's `FieldIndex` keeping ONLY:
   "[[Book.fileclass]]"` (scalar or list), resolved via `frontmatterLinks` +
   `getFirstLinkpathDest` (folder-independent, rename-tracking; resolves the
   non-md file by full name). Bare-string alias values are no longer resolved. The
-  Global-fileClass setting is matched forgivingly (bare / suffixed / path) against
-  the registry names.
+  Global-fileClass setting is matched forgivingly against the registry names: a
+  **wikilink** (`"[[Default.fileclass]]"` — the form every other class reference in
+  this fork uses), a bare or `.fileclass`-suffixed name, or a path. The
+  wikilink/bare/suffixed half is shared with `extends` (`resolveGlobalFileClassName`
+  delegates to `resolveExtendsName`) so the two cannot drift; the path form is
+  this setting's alone, from a legacy `classFilesPath` value.
 - rebuild on `metadataCache.on('resolved')` (debounced) and on fileClass file
   changes; `metadata-menu:indexed`-style event renamed `fileclass:indexed`.
 
