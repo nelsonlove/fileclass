@@ -33,7 +33,7 @@ const ITEM_SEP = "  ·  ";
 // {{ name }} or {{ name | format }} — name is a child field name.
 const TOKEN_RE = /\{\{\s*([^}|]+?)\s*(?:\|\s*([^}]*?)\s*)?\}\}/g;
 
-function displayTemplateOf(field: Field): string | undefined {
+export function displayTemplateOf(field: Field): string | undefined {
 	if (Array.isArray(field.options)) return undefined;
 	const t = field.options.displayTemplate;
 	return typeof t === "string" && t.trim() ? t : undefined;
@@ -41,14 +41,41 @@ function displayTemplateOf(field: Field): string | undefined {
 
 /** Value → display string, honoring Object templates, ranks, and date formats. */
 export function describeField(field: Field, value: unknown, deps: DisplayDeps): string {
-	if (field.type === "Object") return renderObjectItem(field, asObjectValue(value), deps);
+	if (field.type === "Object") {
+		// A value that is not a group at all — a string the field held before it
+		// became one — rendered as nothing, so every surface showed an empty row over
+		// a frontmatter that had a value in it. Show it as it stands; validation says
+		// it doesn't fit.
+		const stray = strayText(value);
+		if (stray !== null) return stray;
+		return renderObjectItem(field, asObjectValue(value), deps);
+	}
 	if (field.type === "ObjectList") {
+		const stray = strayText(value);
+		if (stray !== null) return stray;
 		const items = asListValue(value);
 		if (!items.length) return "";
-		return items.map((it, i) => `${i + 1}. ${renderObjectItem(field, it, deps)}`).join(ITEM_SEP);
+		return items
+			.map((it, i) => {
+				// An item with nothing in it is named as an absence rather than left as a
+				// bare rank ("3. "), which reads as a numbering accident.
+				const text = strayText(it) ?? renderObjectItem(field, it, deps);
+				return `${i + 1}. ${text || "(empty)"}`;
+			})
+			.join(ITEM_SEP);
 	}
 	if (DATE_TYPES.has(field.type)) return formatDate(field, value, undefined, deps);
 	return displayValue(field, value);
+}
+
+/**
+ * The text of a value that isn't a group (nor a list, for an ObjectList), or null
+ * when the value has the right shape. Empty stays empty.
+ */
+export function strayText(value: unknown): string | null {
+	if (value === undefined || value === null || value === "") return null;
+	if (typeof value === "object") return null;
+	return String(value);
 }
 
 /** One object's display: its template, or the first non-empty child value. */
@@ -68,13 +95,23 @@ export function renderObjectItem(
 		return "";
 	}
 
-	return template
+	const filled = template
 		.replace(TOKEN_RE, (_m, rawName: string, rawFmt?: string) => {
 			const child = children.find((c) => c.name === rawName.trim());
 			if (!child) return "";
 			return childDisplay(child, object[child.name], rawFmt?.trim() || undefined, deps);
 		})
 		.trim();
+	// Every token came back empty, so what is left is the template's own punctuation:
+	// an item with nothing in it displayed as "·", which reads as a value rather than
+	// as an absence. An empty item has an empty display, and the surfaces that show
+	// one say "(empty)" in their own words.
+	return hasContent(filled) ? filled : "";
+}
+
+/** True when a rendered template has something of the value left in it. */
+function hasContent(text: string): boolean {
+	return /[\p{L}\p{N}]/u.test(text);
 }
 
 function childDisplay(

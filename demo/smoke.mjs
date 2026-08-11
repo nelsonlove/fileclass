@@ -18,6 +18,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { once } from "node:events";
 import { createInterface } from "node:readline/promises";
 
 import { loadScenario } from "./lib/scenario.mjs";
@@ -33,6 +34,7 @@ import {
 	stageVault,
 	wipeVault,
 } from "./lib/stage.mjs";
+import { checkDocRef, collectAnchors } from "./lib/docsAnchors.mjs";
 import { fieldTypesFromSource, scanScript } from "./lib/scriptScan.mjs";
 import { waitForPlugin } from "./lib/trust.mjs";
 import { connect } from "./lib/subtitles.mjs";
@@ -57,8 +59,12 @@ let registry = null;
 let launched = false;
 let staged = false;
 let quitTheirs = false;
+let tornDown = false;
 
 async function teardown() {
+	// Idempotent: a signal can arrive while the normal path is already running it.
+	if (tornDown) return;
+	tornDown = true;
 	if (launched) await quitObsidian();
 	registry?.restore();
 	if (staged) wipeVault(scenario);
@@ -100,6 +106,13 @@ async function inspect(stage) {
 				path: f.path,
 				classes: p.index.getFileClasses(f),
 				fields: p.index.getFields(f).map((x) => `${x.name}:${x.type}`),
+				// Root fields only, for the "not yet inserted" line: a group's children
+				// live inside their parent's value, not as frontmatter keys, so listing
+				// them as missing said a note lacked what it actually held.
+				rootFields: p.index
+					.getFields(f)
+					.filter((x) => !x.path)
+					.map((x) => x.name),
 				keys: Object.keys(app.metadataCache.getFileCache(f)?.frontmatter ?? {}),
 			}))
 			.sort((a, b) => a.path.localeCompare(b.path));
@@ -127,7 +140,7 @@ function report(facts) {
 
 	console.log(`\n${bold("Vault as the take will find it")}`);
 	for (const n of facts.notes) {
-		const declared = n.fields.map((f) => f.split(":")[0]);
+		const declared = n.rootFields ?? n.fields.map((f) => f.split(":")[0]);
 		const missing = n.classes.length ? declared.filter((name) => !n.keys.includes(name)) : [];
 		const bits = [
 			n.classes.length ? `class ${n.classes.join("+")}` : dim("no class"),
@@ -136,6 +149,14 @@ function report(facts) {
 		console.log(`  ${n.path}\n    ${bits.join(" · ")}`);
 		if (missing.length) console.log(`    ${dim(`fields not yet inserted: ${missing.join(", ")}`)}`);
 	}
+
+	// The `doc:` value becomes the "Docs:" line of the published description, which nobody
+	// re-reads. Take 023 went out pointing at an anchor that lives on another page; reading
+	// the markdown catches that here, before the recording rather than after the upload.
+	const docs = checkDocRef(scenario.doc, collectAnchors(resolve(pluginDir, "docs/content")));
+	console.log(
+		`\n${bold("Docs link")}  ${docs.ok ? dim(docs.message) : warn(`✗ ${scenario.doc} — ${docs.message}`)}`
+	);
 
 	console.log(`\n${bold("What the script names")}`);
 	const scan = scanScript(scenario.steps, {
@@ -182,7 +203,10 @@ async function main() {
 			quitTheirs = true;
 			await quitObsidian();
 		}
-		vaultPath = stageVault(scenario, pluginDir);
+		// A smoke test inspects what the plugin makes of the fixture, so it always
+		// gets the plugin — even for a take that installs it on camera (`plugin:
+		// false`), where waiting for a plugin nobody installed used to fail after 25s.
+		vaultPath = stageVault({ ...scenario, plugin: true }, pluginDir);
 		staged = true;
 		console.log(dim(`Staged   ${vaultPath} (plugin ${pluginVersion(pluginDir) ?? "?"})`));
 		registry = captureVaultRegistry(vaultPath);
@@ -205,6 +229,16 @@ async function main() {
 	stage.disconnect();
 
 	if (flag("close") || attach) return;
+
+	// Nobody can press Enter when stdin isn't a terminal — a piped or scripted run.
+	// Waiting there used to end the process the moment stdin reached EOF, *before*
+	// the teardown below: Obsidian stayed open on the staged vault and the operator's
+	// vault list kept pointing at it, which then poisoned the next run's backup.
+	if (!process.stdin.isTTY) {
+		console.log(dim("\nNot a terminal — closing Obsidian and resetting the vault."));
+		return;
+	}
+
 	console.log(
 		dim(
 			"\nObsidian stays open on the staged vault — play the steps by hand if you want.\n" +
@@ -212,11 +246,16 @@ async function main() {
 		)
 	);
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
-	await rl.question("");
-	rl.close();
+	try {
+		// Whichever comes first: the operator's Enter, or stdin closing under us
+		// (Ctrl-D, or the terminal going away). `question()` never settles on EOF.
+		await Promise.race([rl.question(""), once(rl, "close")]);
+	} finally {
+		rl.close();
+	}
 }
 
-for (const sig of ["SIGINT", "SIGTERM"]) {
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 	process.on(sig, async () => {
 		await teardown();
 		process.exit(130);

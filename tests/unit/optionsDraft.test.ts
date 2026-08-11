@@ -215,7 +215,9 @@ describe("File / Media base binding", () => {
 			baseFile: "People.base",
 			viewName: "All",
 			displayColumn: "note.title",
-			embed: false,
+			// #19's pair, empty until the author picks a dependency.
+			dependsOn: "",
+			matchProperty: "",
 		});
 		expect(buildFieldOptions("MultiFile", draft)).toEqual({
 			baseFile: "People.base",
@@ -224,9 +226,11 @@ describe("File / Media base binding", () => {
 		});
 	});
 
-	it("writes embed only for Media types", () => {
+	it("no longer writes an embed marker for Media types", () => {
+		// The `embed` option is gone: an embedded frontmatter value isn't a link to
+		// Obsidian, so a rename left it dangling and a Bases image column ignored it.
 		const draft = { baseFile: "M.base", embed: true };
-		expect(buildFieldOptions("Media", draft)).toEqual({ baseFile: "M.base", embed: true });
+		expect(buildFieldOptions("Media", draft)).toEqual({ baseFile: "M.base" });
 		expect(buildFieldOptions("File", draft)).toEqual({ baseFile: "M.base" });
 	});
 });
@@ -306,5 +310,26 @@ describe("Object/ObjectList display template", () => {
 		const draft = optionsToDraft("Object", { displayTemplate: "{{x}}", foo: "bar" });
 		draft.displayTemplate = "";
 		expect(buildFieldOptions("Object", draft)).toEqual({ foo: "bar" });
+	});
+});
+
+describe("a list field's values source", () => {
+	it("flags a Dataview source, which this plugin does not run", () => {
+		const draft = optionsToDraft("Select", { sourceType: "ValuesFromDVQuery", valuesList: {} });
+		expect(draft.legacyDvSource).toBe(true);
+		expect(draft.sourceType).toBeUndefined();
+	});
+
+	it("does not flag a field that has no options yet", () => {
+		// The editor's draft is shared across types: switching Input → Select used to leave
+		// `sourceType` unset and raise a "legacy Dataview source" warning on a new field.
+		expect(optionsToDraft("Select", {}).legacyDvSource).toBeUndefined();
+		expect(optionsToDraft("Select", []).legacyDvSource).toBeUndefined();
+	});
+
+	it("does not flag the three sources it does run", () => {
+		expect(optionsToDraft("Select", { sourceType: "ValuesList", valuesList: { 1: "a" } }).legacyDvSource).toBeUndefined();
+		expect(optionsToDraft("Cycle", { sourceType: "ValuesListNotePath", valuesListNotePath: "n.md" }).legacyDvSource).toBeUndefined();
+		expect(optionsToDraft("Multi", { sourceType: "ValuesFromBase", baseFile: "b.base" }).legacyDvSource).toBeUndefined();
 	});
 });

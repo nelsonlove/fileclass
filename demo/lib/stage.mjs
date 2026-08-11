@@ -38,6 +38,8 @@ const OBSIDIAN_JSON = join(
 	"obsidian",
 	"obsidian.json"
 );
+/** Where the pre-run vault list is parked, so a killed run can still be undone. */
+const REGISTRY_BACKUP = join(RUNS_DIR, ".obsidian-json.backup");
 const APP = process.env.OBSIDIAN_APP || "Obsidian";
 
 /** Community theme every take records with (copied from a local vault). */
@@ -80,7 +82,10 @@ const DEFAULTS = {
 		cssTheme: THEME,
 		nativeMenus: false,
 	},
-	"app.json": { promptDelete: false },
+	// No prompts a take would have to dismiss on camera: deleting goes straight to
+	// the bin, and a rename updates links without asking — which take 014 relies on,
+	// since it renames a cover to show the value following it.
+	"app.json": { promptDelete: false, alwaysUpdateLinks: true },
 };
 
 const isDir = (p) => existsSync(p) && readdirSync(p, { withFileTypes: true }) && true;
@@ -177,7 +182,18 @@ function installPlugin(vault, pluginDir, settings) {
 		if (!existsSync(src)) refuse(`missing ${f} — run \`npm run build\` in the plugin repo first`);
 		cpSync(src, join(out, f));
 	}
-	writeFileSync(join(out, "data.json"), JSON.stringify(settings, null, 2));
+	// Two recording defaults on every staged vault, unless a scenario overrides them.
+	//
+	// `shorterModal` pins a modal 45px from the top and stops it above the band the capture
+	// keeps for burned-in subtitles — a note with sixteen fields reached straight into them. It
+	// has no settings row on purpose, so this is where the takes get it.
+	//
+	// `enableDraggableModals` so a modal can be pulled aside on camera when it covers the very
+	// thing a step is about. It ships **off** — it is experimental and it touches a surface
+	// every plugin shares — but a take is exactly the situation it was built for, and a
+	// recording that cannot move a modal has to close it and reopen it instead.
+	const staged = { shorterModal: true, enableDraggableModals: true, ...settings };
+	writeFileSync(join(out, "data.json"), JSON.stringify(staged, null, 2));
 
 	const enabledPath = join(vault, ".obsidian", "community-plugins.json");
 	const enabled = existsSync(enabledPath) ? JSON.parse(readFileSync(enabledPath, "utf8")) : [];
@@ -264,6 +280,11 @@ export async function quitObsidian({ timeout = 15000 } = {}) {
  */
 export function captureVaultRegistry(vault) {
 	const before = existsSync(OBSIDIAN_JSON) ? readFileSync(OBSIDIAN_JSON, "utf8") : null;
+	// Also on disk: a run killed before its teardown takes its in-memory copy with
+	// it, and the operator is left with a dead demo vault in their vault list.
+	mkdirSync(RUNS_DIR, { recursive: true });
+	if (before == null) rmSync(REGISTRY_BACKUP, { force: true });
+	else writeFileSync(REGISTRY_BACKUP, before);
 	const config = before ? JSON.parse(before) : { vaults: {} };
 	const previouslyOpen = Object.values(config.vaults ?? {})
 		.filter((v) => v.open)
@@ -281,8 +302,20 @@ export function captureVaultRegistry(vault) {
 		restore() {
 			if (before == null) rmSync(OBSIDIAN_JSON, { force: true });
 			else writeFileSync(OBSIDIAN_JSON, before);
+			rmSync(REGISTRY_BACKUP, { force: true });
 		},
 	};
+}
+
+/**
+ * Puts the vault list back from the on-disk backup — the repair for a run that
+ * died before its own teardown. Returns what it did, so a caller can say so.
+ */
+export function restoreVaultRegistryFromDisk() {
+	if (!existsSync(REGISTRY_BACKUP)) return "nothing to restore";
+	writeFileSync(OBSIDIAN_JSON, readFileSync(REGISTRY_BACKUP, "utf8"));
+	rmSync(REGISTRY_BACKUP, { force: true });
+	return "restored the vault list from the backup";
 }
 
 /** Launches Obsidian with the CDP port and waits for it to answer. */

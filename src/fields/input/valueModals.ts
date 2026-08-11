@@ -17,9 +17,10 @@ import {
 import { makeStickyFooter } from "../../ui/modalFooter";
 import { modalTitle } from "../../ui/modalTitle";
 import { returnFocusTo } from "../../ui/listKeyboard";
+import { attachUnsavedGuard } from "../../ui/unsavedGuard";
 
 import { DisplayGroup, groupLabel } from "../baseOrder";
-import { parseTemplate, renderTemplate } from "../inputTemplate";
+import { matchTemplate, parseTemplate, renderTemplate } from "../inputTemplate";
 import { stepNumber, stepSize } from "../numberStep";
 import { NumberOptions } from "../options";
 import { ValidationResult } from "../validate";
@@ -128,6 +129,12 @@ export interface TextAreaOptions {
 	placeholder?: string;
 	validate?: (value: string) => ValidationResult;
 	onSubmit: (value: string) => void;
+	/**
+	 * Offers to rewrite the text in this field's own notation. Returns the converted
+	 * text, or null when there is nothing to offer — the button appears and disappears
+	 * with that answer as the text changes.
+	 */
+	convert?: { label: string; run: (text: string) => string | null };
 }
 
 /** Multi-line input with inline validation (JSON/YAML). Cmd/Ctrl+Enter saves. */
@@ -147,21 +154,47 @@ export class TextAreaInputModal extends Modal {
 		});
 
 		const input = new TextAreaComponent(contentEl);
-		input.setValue(this.opts.initial ?? "").setPlaceholder(this.opts.placeholder ?? "");
+		const initial = this.opts.initial ?? "";
+		input.setValue(initial).setPlaceholder(this.opts.placeholder ?? "");
 		input.inputEl.rows = 10;
 		input.inputEl.setCssStyles({ width: "100%", fontFamily: "var(--font-monospace)" });
 		window.setTimeout(() => input.inputEl.focus(), 0);
 
+		// What the draft is compared against: what it opened on, then what was last
+		// saved. Without that second half, Save wrote the value and then asked about
+		// "unsaved changes" — the guard was comparing against the original text of a
+		// modal that had just been committed.
+		let baseline = initial;
 		const submit = () => {
 			const value = input.getValue();
 			const result = this.opts.validate?.(value);
 			if (result && !result.ok) {
 				errorEl.setText(result.message ?? "Invalid value");
-				return;
+				return false;
 			}
 			this.opts.onSubmit(value);
+			baseline = value;
 			this.close();
+			return true;
 		};
+
+		// The parser answers as you type, not only when you ask to save: this is the
+		// one editor where a mistake can be twenty lines up, and learning about it on
+		// the way out is learning too late. An empty box is not an error — it clears
+		// the field.
+		const recheck = () => {
+			const text = input.getValue();
+			const result = text.trim() ? this.opts.validate?.(text) : { ok: true };
+			errorEl.setText(result && !result.ok ? (result.message ?? "Invalid value") : "");
+			guard.refresh(); // declared below; only ever called from an event
+			// The offer follows the text: a JSON field holding YAML can be converted, the
+			// same field a keystroke later may not be.
+			if (convertBtn && this.opts.convert) {
+				const available = this.opts.convert.run(input.getValue()) !== null;
+				convertBtn.toggleClass("is-hidden-fc", !available);
+			}
+		};
+		input.inputEl.addEventListener("input", recheck);
 
 		input.inputEl.addEventListener("keydown", (e) => {
 			if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -169,9 +202,31 @@ export class TextAreaInputModal extends Modal {
 				submit();
 			}
 		});
-		new Setting(contentEl)
-			.setDesc("Cmd/Ctrl+Enter to save")
-			.addButton((b) => b.setButtonText("Save").setCta().onClick(submit));
+		const footer = new Setting(contentEl).setDesc("Cmd/Ctrl+Enter to save");
+		let convertBtn: HTMLButtonElement | null = null;
+		if (this.opts.convert) {
+			const convert = this.opts.convert;
+			footer.addButton((b) => {
+				convertBtn = b.buttonEl;
+				b.setButtonText(convert.label).onClick(() => {
+					const next = convert.run(input.getValue());
+					if (next === null) return;
+					input.setValue(next);
+					recheck();
+					input.inputEl.focus();
+				});
+			});
+		}
+		footer.addButton((b) => b.setButtonText("Save").setCta().onClick(() => void submit()));
+		// Raw text is where the most typing happens, so it is the worst place to lose
+		// it: Escape used to discard a blob without a word.
+		const guard = attachUnsavedGuard(this.app, this, {
+			isDirty: () => input.getValue() !== baseline,
+			save: submit,
+			subject: "value",
+		});
+		guard.mountHint(footer.settingEl);
+		recheck();
 	}
 
 	onClose(): void {
@@ -204,14 +259,29 @@ export class TemplateInputModal extends Modal {
 		const { contentEl } = this;
 		modalTitle(contentEl, this.opts.title);
 
+		// Seed the controls from the value already stored, so editing one part keeps
+		// the others: touching a control re-renders the whole template.
+		const stored = this.opts.initial ? matchTemplate(this.opts.template, this.opts.initial) : null;
+
+		// The value as it stands, kept where it can be read while typing. The preview
+		// below is the *new* value and is rewritten by the first control you touch —
+		// which, for a value that predates the template and so seeds no control, used
+		// to be the only place it existed. Nobody should have to remember it.
+		if (this.opts.initial) {
+			const current = contentEl.createDiv({ cls: "fileclass-current-value" });
+			current.createSpan({ text: "Current value: ", cls: "fileclass-current-value-label" });
+			current.createSpan({ text: this.opts.initial });
+		}
+
 		for (const part of parseTemplate(this.opts.template)) {
-			this.values[part.name] = "";
+			this.values[part.name] = stored?.[part.name] ?? "";
 			const row = new Setting(contentEl).setName(part.name);
 			if (part.choices) {
 				const choices = part.choices;
 				row.addDropdown((d) => {
 					d.addOption("", "--select--");
 					for (const c of choices) d.addOption(c, c);
+					if (choices.includes(this.values[part.name])) d.setValue(this.values[part.name]);
 					d.onChange((v) => this.onPartChange(part.name, v));
 				});
 			} else {
@@ -219,6 +289,7 @@ export class TemplateInputModal extends Modal {
 				row.addText((t) =>
 					t
 						.setPlaceholder(`Value for ${part.name}`)
+						.setValue(this.values[part.name])
 						.onChange((v) => this.onPartChange(part.name, v))
 				);
 			}
@@ -418,10 +489,15 @@ export class ChoiceSuggestModal<T> extends SuggestModal<T> {
 		private readonly toText: (choice: T) => string,
 		private readonly onPick: (choice: T) => void,
 		placeholder = "Select a value",
-		private readonly groupOf?: (choice: T) => string | null | undefined
+		private readonly groupOf?: (choice: T) => string | null | undefined,
+		/** Optional visual leading the row — a media thumbnail, today. */
+		private readonly preview?: (choice: T) => HTMLElement | null
 	) {
 		super(app);
 		this.setPlaceholder(placeholder);
+		// A SuggestModal's box is `.prompt`, not `.modal`, so the compact-modal rules never
+		// reached it: picking one value read a size larger than picking several.
+		this.modalEl.addClass("fileclass-prompt");
 	}
 
 	onOpen(): void {
@@ -459,10 +535,22 @@ export class ChoiceSuggestModal<T> extends SuggestModal<T> {
 			if (group !== undefined && (i <= 0 || group !== prev)) {
 				el.createDiv({ text: groupLabel(group), cls: "fileclass-group-header" });
 			}
-			el.createDiv({ text: this.toText(choice) });
+			this.renderRow(el.createDiv(), choice);
 			return;
 		}
-		el.setText(this.toText(choice));
+		this.renderRow(el, choice);
+	}
+
+	/** The row itself: the preview, then the text. */
+	private renderRow(host: HTMLElement, choice: T): void {
+		const thumb = this.preview?.(choice);
+		if (!thumb) {
+			host.setText(this.toText(choice));
+			return;
+		}
+		host.addClass("fileclass-suggestion-row");
+		host.append(thumb);
+		host.createSpan({ text: this.toText(choice) });
 	}
 
 	/** Names the group whose section currently sits at the top of the results. */
@@ -500,6 +588,8 @@ export class ChoiceSuggestModal<T> extends SuggestModal<T> {
 }
 
 export interface MultiSelectOptions {
+	/** Optional visual leading each row — a media thumbnail, today. */
+	preview?: (value: string) => HTMLElement | null;
 	title: string;
 	allowed: string[];
 	selected: string[];
@@ -510,6 +600,14 @@ export interface MultiSelectOptions {
 	 * "(Other)" header.
 	 */
 	groups?: DisplayGroup[];
+	/**
+	 * Why a value cannot be **added** — shown, greyed, rather than hidden.
+	 *
+	 * A value missing from a list is a question ("where is my class folder?"); a value
+	 * present and explained is an answer. One already selected stays switchable, so a
+	 * binding written before the rule can still be removed.
+	 */
+	disabledReason?: (value: string) => string | null;
 }
 
 /** Toggle list for Multi fields over a constrained set of values. */
@@ -702,14 +800,28 @@ export class MultiSelectModal extends Modal {
 			else this.selected.delete(value);
 			this.refreshCounts();
 		};
+		// A value that cannot be added is shown and explained, not dropped from the list.
+		// Already selected, it stays removable: a binding made before the rule is not a trap.
+		const reason = this.selected.has(value) ? null : (this.opts.disabledReason?.(value) ?? null);
 		let toggle: ToggleComponent | undefined;
 		const setting = new Setting(container)
 			.setName(value)
 			.addToggle((t) => {
 				toggle = t;
-				t.setValue(this.selected.has(value)).onChange(apply);
+				t.setValue(this.selected.has(value)).setDisabled(!!reason).onChange(apply);
 			});
 		setting.settingEl.addClass("fileclass-toggle-row");
+		if (reason) {
+			setting.setDesc(reason);
+			setting.settingEl.addClass("fileclass-row-disabled");
+			this.rows.push({ value, el: setting.settingEl });
+			return; // no click handler: the row is inert
+		}
+		const thumb = this.opts.preview?.(value);
+		if (thumb) {
+			setting.nameEl.prepend(thumb);
+			setting.nameEl.addClass("fileclass-suggestion-row");
+		}
 		this.rows.push({ value, el: setting.settingEl });
 		setting.settingEl.addEventListener("click", (e) => {
 			// The switch handles its own clicks; anywhere else in the row flips it.

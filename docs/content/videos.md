@@ -9,6 +9,10 @@ weight: 15
 One feature per video, a minute or two each, in the order they build on each
 other. Captions are English; YouTube translates them into your language.
 
+## Tour #1: from an untyped vault to a typed library
+
+{{< video "000" >}}
+
 ## Install and set up
 
 {{< video "001" >}}
@@ -64,3 +68,123 @@ other. Captions are English; YouTube translates them into your language.
 ## Several links in one field
 
 {{< video "013" >}}
+
+## Covers and attachments
+
+{{< video "014" >}}
+
+## Candidates that depend on another field
+
+{{< video "015" >}}
+
+## A field with a fixed shape
+
+{{< video "016" >}}
+
+## Dates that link to your daily notes
+
+{{< video "016b" >}}
+
+## Pick an icon
+
+{{< video "017" >}}
+
+## Colors, and your own palette
+
+{{< video "018" >}}
+
+## A place on a map
+
+{{< video "019" >}}
+
+## A group of fields inside a field
+
+{{< video "020" >}}
+
+## A list of grouped fields
+
+{{< video "021" >}}
+
+## When raw is the honest answer
+
+{{< video "022" >}}
+
+## Fields you can't leave empty
+
+{{< video "023" >}}
+
+## One parent class, three children
+
+{{< video "024" >}}
+
+## Two classes on one note
+
+{{< video "025" >}}
+
+## Notes a class claims by itself
+
+{{< video "025b" >}}
+
+## Every field of a note, one modal
+
+{{< video "026" >}}
+
+## Right-click your way through it
+
+{{< video "027" >}}
+
+## Buttons where you already edit
+
+{{< video "028" >}}
+
+## Seeing at a glance what's typed
+
+{{< video "029" >}}
+
+## One field across a whole class
+
+{{< video "030" >}}
+
+## Renaming a field, and every note that carries it
+
+{{< video "030b" >}}
+
+## A class that gained a field
+
+{{< video "030c" >}}
+
+## New notes that arrive already typed
+
+{{< video "031" >}}
+
+## A table for a class, generated
+
+{{< video "032" >}}
+
+## Schema changed? the base follows
+
+{{< video "033" >}}
+
+## Editing right in the table
+
+{{< video "034" >}}
+
+## What's missing, in a column
+
+{{< video "035" >}}
+
+## A base inside a note
+
+{{< video "036" >}}
+
+## A field that follows your canvas
+
+{{< video "037" >}}
+
+## Groups on a canvas as data
+
+{{< video "038" >}}
+
+## The model your classes make
+
+{{< video "039" >}}

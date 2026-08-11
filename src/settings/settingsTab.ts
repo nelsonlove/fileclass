@@ -9,7 +9,10 @@ import { attachFormatPreview } from "../ui/dateFormatPreview";
 
 import type FileclassPlugin from "../../main";
 import { addCustomColor, removeCustomColor } from "../fields/customPalette";
+import { colorCircleInput } from "../ui/colorInput";
+import { applyDraggableModals } from "../ui/modalDrag";
 import { FolderSuggest } from "../ui/folderSuggest";
+import { UnknownKeysPosition } from "../schema/reorder";
 import { normalizeFolderPath } from "./settings";
 
 export class FileclassSettingTab extends PluginSettingTab {
@@ -35,19 +38,36 @@ export class FileclassSettingTab extends PluginSettingTab {
 					})
 			);
 
+		/*
+		 * A list, not a text box, for the same reason `Extends` became one: a name that is not
+		 * a fileClass binds nothing and says nothing, and the set of valid answers is known.
+		 * A value that no longer resolves — a class renamed or deleted — is kept in the list
+		 * and marked rather than silently reset, since dropping it would quietly untype every
+		 * note in the vault that had nothing else.
+		 */
 		new Setting(containerEl)
 			.setName("Global fileClass")
-			.setDesc("Applied to every note that has no other binding. Leave empty to disable.")
-			.addText((text) =>
-				text
-					.setPlaceholder("(none)")
-					.setValue(this.plugin.settings.globalFileClass)
-					.onChange(async (value) => {
-						this.plugin.settings.globalFileClass = value.trim();
-						await this.plugin.saveSettings();
-						void this.plugin.index.rebuild();
-					})
-			);
+			.setDesc(
+				"A baseline carried by every note, on top of the classes it names itself; " +
+					"the note's own class wins any field both declare. Not applied to the class folder."
+			)
+			.addDropdown((dropdown) => {
+				const current = this.plugin.settings.globalFileClass.trim();
+				dropdown.addOption("", "— none —");
+				for (const name of [...this.plugin.index.fileClassNames].sort((a, b) =>
+					a.localeCompare(b)
+				)) {
+					dropdown.addOption(name, name);
+				}
+				if (current && !this.plugin.index.fileClassNames.includes(current)) {
+					dropdown.addOption(current, `${current} (no such fileClass)`);
+				}
+				dropdown.setValue(current).onChange(async (value) => {
+					this.plugin.settings.globalFileClass = value;
+					await this.plugin.saveSettings();
+					void this.plugin.index.rebuild();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Bases folder")
@@ -123,6 +143,22 @@ export class FileclassSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Schema canvas")
+			.setDesc(
+				"Where Draw the schema canvas writes. Blank uses <class folder>/Schema.canvas. " +
+					"The file is yours to arrange afterwards: a sync keeps every position it finds."
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Classes/Schema.canvas")
+					.setValue(this.plugin.settings.schemaCanvasPath)
+					.onChange(async (value) => {
+						this.plugin.settings.schemaCanvasPath = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("Canvas fields engine")
 			.setDesc(
 				"Auto-fill Canvas/CanvasGroup/CanvasGroupLink fields from .canvas files. This writes to frontmatter automatically when a canvas changes."
@@ -153,6 +189,62 @@ export class FileclassSettingTab extends PluginSettingTab {
 				toggle.setValue(this.plugin.settings.insertFieldsOnBind).onChange(async (value) => {
 					this.plugin.settings.insertFieldsOnBind = value;
 					await this.plugin.saveSettings();
+				})
+			);
+
+		/*
+		 * #104. `processFrontMatter` appends, so inserting a note's missing fields lands them
+		 * after whatever it already carried — which is where the disorder the users report is
+		 * created. Off by default all the same: it rewrites the whole block, so it touches
+		 * lines nobody asked to edit and it shows up in a git diff.
+		 */
+		new Setting(containerEl)
+			.setName("Reorder frontmatter when inserting fields")
+			.setDesc(
+				"After Insert missing fields, put the note's properties back in the order its class declares them. " +
+					"Rewrites the whole frontmatter block, which drops YAML comments — as any property write already does. " +
+					"The command Reorder frontmatter to match the class does it on demand, whatever this says."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.reorderOnInsert).onChange(async (value) => {
+					this.plugin.settings.reorderOnInsert = value;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Keys your classes don't declare")
+			.setDesc(
+				"Where a reorder puts properties no class knows about — tags, aliases, cssclasses, the fileClass key, anything hand-written."
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						top: "First — where tags and aliases already sit",
+						bottom: "Last — after everything the class declares",
+						"keep-relative": "Where they are — only the class's keys move",
+					})
+					.setValue(this.plugin.settings.unknownKeysPosition)
+					.onChange(async (value) => {
+						this.plugin.settings.unknownKeysPosition = value as UnknownKeysPosition;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Movable modals (experimental)")
+			.setDesc(
+				"Drag a modal by its title, offset each modal opening over another, dim the app once " +
+					"instead of once per modal, and let every modal of a stack be clicked — not only the " +
+					"topmost. It works by neutralising Obsidian's own modal backdrops, which other plugins " +
+					"share, so it is off by default. Desktop only. While modals are stacked, clicking " +
+					"outside them closes nothing (Escape still closes the top one)."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.enableDraggableModals).onChange(async (value) => {
+					this.plugin.settings.enableDraggableModals = value;
+					await this.plugin.saveSettings();
+					applyDraggableModals(value);
 				})
 			);
 
@@ -245,16 +337,12 @@ export class FileclassSettingTab extends PluginSettingTab {
 				setIcon(remove, "x");
 				remove.onclick = () => void removeCustomColor(color).then(render);
 			}
-			// A <label> wrapping a hidden native color input: clicking it opens the
-			// native dialog reliably (label activation), unlike input.click().
-			const add = paletteEl.createEl("label", {
-				cls: "fileclass-color-circle is-add",
-				attr: { "aria-label": "Add color", title: "Add color" },
+			colorCircleInput(paletteEl, {
+				label: "Add color",
+				cls: "is-add",
+				badge: "plus",
+				onPick: (value) => void addCustomColor(value).then(render),
 			});
-			setIcon(add, "plus");
-			const input = add.createEl("input", { cls: "fileclass-color-hidden", attr: { type: "color" } });
-			input.value = "#000000";
-			input.addEventListener("change", () => void addCustomColor(input.value).then(render));
 		};
 		render();
 	}

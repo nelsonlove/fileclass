@@ -92,6 +92,51 @@ tests (§14) must catch it.
 - Context file: filters/formulas using `this.file` resolve against
   `controller.currentFile` — set it before `buildBasesContext` for
   embed-context views.
+- **What the host asks of a registered view** (traced property by property on the
+  object returned by the factory, August 2026):
+  - in a **leaf**: `load` → `type` → `focus`, then it *sets* `allProperties` and
+    `data` and calls `onDataUpdated()`;
+  - in an **embed** (`![[x.base]]` or a ```` ```base ```` block): `load` → `type`,
+    and then nothing until the container is shown. `onResize` is called later.
+  So `view.type` **is read** (the native views carry it as a field) and a custom
+  view should expose the view id.
+- **A custom view must fill its container immediately, or an embed deadlocks.**
+  Obsidian ships
+  `.workspace-leaf-content[data-type="markdown"] .block-language-base .bases-view:empty,
+  … .bases-embed .bases-view:empty { display: none }`, and `runQuery` suspends
+  until `viewContainerEl.isShown()` (it awaits `onNodeInserted` otherwise, read
+  from the minified source). A view that draws nothing before its data arrives is
+  therefore hidden, never shown, never fed: measured as "0 results" with
+  `display: none` and `isShown() === false` on our container, against `block` on
+  the native `table` in the same block. The native views escape it by building
+  their skeleton (thead, scroll element) in the constructor. One child element is
+  enough — `fileclassTableView` writes a `.fileclass-table-pending` div on `load`
+  and whenever it has nothing to render.
+- **The toolbar is a sibling of the view container**, not a parent: `.bases-header
+  > .bases-toolbar` beside `.bases-view`, both under `.view-content` in a leaf and
+  under `.bases-embed` / `.block-language-base` in an embed. Anything injected into
+  a toolbar must be scoped to the *closest* of those wrappers — a note holding two
+  embedded bases has two toolbars.
+- **A rendered table can always name itself**, from one of two places:
+  - a leaf states it: `leaf.getViewState().state === {file: "Books.base", viewName:
+    "Book"}`;
+  - an **embed** states it on the element holding it: `![[Books.base#Book]]` leaves
+    `src="Books.base#Book"` (and `alt="Books.base > Book"`) on the `.internal-embed`,
+    reachable with `closest("[src]")`. `src` is a **link**, so resolve it with
+    `getFirstLinkpathDest`; with no `#`, the rendered view is the one the toolbar
+    names.
+  That is how a table knows which fileClass declared it (`baseFile`/`baseView`). An
+  inline ```` ```base ```` block has no file and no `src`: nothing declares it, so a
+  view there falls back to the classes of its rows.
+- **The registry exposes views only.** `instance.registrations` holds view types
+  (`table`, `cards`, `list`, + ours) and the instance offers `registerView` /
+  `deregisterView` / `getViewFactory` — there is **no** hook to contribute a
+  computed property or a function, which is why validity cannot become something
+  Bases' own Sort/Filter menus see (#142).
+- **`property == "X"` does not match a list.** A note carrying several classes
+  stores `fileClass` as a YAML list, and equality never matches it (measured: 8
+  rows instead of 9). Generated filters use `property.containsAny("X")`, which
+  matches the scalar case too.
 
 ### 3.2 processFrontMatter (write path)
 Verified: **preserves order** of top-level keys, nested object keys, ObjectList
@@ -374,7 +419,21 @@ canvas file tracking (comes with the planned Canvas engine, §9.1).
   migration). Sync/regenerate never pushes a per-view scope back to base-wide.
   Anchored by a unit test (two fileClasses, two views survive a re-sync) and the
   e2e `two-fileclasses.base` fixture.
-- Embeds: users embed bases natively (```` ```base ````); no custom code block.
+- Embeds: users embed bases natively — `![[Some.base]]` or a ```` ```base ````
+  block; no custom code block of ours. An embedded `fileclass-table` is the same
+  view: editable cells, validation columns, and the *Manage `<FileClass>`* wrench,
+  each scoped to its own embed. See §3.1 for the two rules an embed enforces that a
+  leaf does not (fill the container, expose `type`).
+- **The class ↔ view link** (`baseFile`/`baseView` on the class note) is what names
+  the table: `Books.base › Book` is Book's view even when a row carries several
+  classes. It is also a uniqueness constraint — two classes mirroring into one view
+  would overwrite each other's `order:` on every sync, so the generator and the
+  options editor refuse it, naming the class that claimed it first
+  (`fileClassClaimingView`).
+- **The `valid` column filters on itself** (#142): its header cycles all → failures
+  → clean and carries the failure count. Session-only state, never written to the
+  base — and the only route available, since the registry takes no computed
+  properties (§3.1).
 
 ## 12. Public API + CLI/TUI
 
@@ -464,6 +523,74 @@ fields/user docs (first-write warning), not in a migration guide.
   order-preservation (§3.2). If a canary fails on a new Obsidian version,
   `basesAdapter` is the only file expected to change.
 
+### 14.1 Planned: the demo harness as the e2e runner
+
+**Status: designed, not built** (decided 2026-08-04, deferred). Nothing below
+exists yet; `tests/e2e/canary.mjs` and `demo/` are what exist.
+
+**Why.** Every defect found in the week of 0.2.2 → 0.2.5 lived in the *glue* with
+Obsidian, where 467 unit tests are blind by construction: a Properties row
+recycled onto another note (a control writing to the wrong note — silent for a
+`Cycle`), a name-only de-duplication dropping a child field, an item pushed into
+a draft before its editor opened. Each was found by playing the surface by hand
+before filming it — 13 fix commits attribute themselves to that pass, against 3
+to a user report. The pass is the most productive quality instrument in the
+project and the least durable: it lives in a person's hands.
+
+Meanwhile the two halves of an automated version already exist apart:
+
+| Exists | Missing |
+|--------|---------|
+| `tests/e2e/canary.mjs` — assertions, exit codes (0 / 1 / 2), a dependency-free CDP client | it asks a human to launch Obsidian, open the vault and enable the plugins |
+| `demo/lib/stage.mjs` + `probe.mjs` — stage a vault, launch with the debug port, accept the trust prompt, wait for the plugin, wipe and restore the vault registry in a `finally` | it has no notion of failure: a probe prints, it does not assert |
+
+So the work is a marriage, not a construction.
+
+**1. Runner.** `tests/e2e/run.mjs` takes `probe.mjs`'s lifecycle and serves specs
+with it. A spec declares the vault it needs — a demo fixture by number, or a
+purpose-built one — and the runner **groups specs by vault** so Obsidian is
+launched once per group (~15 s, the only real cost). `npm run test:e2e` then runs
+with no human hands.
+
+**2. Driving vocabulary.** One file of helpers, everything the manual passes do:
+open a note, run a command, read a note's frontmatter, click a row's action *by
+its accessible name*, type, press, read the top modal. Plus the `waitUntil` the
+probes lack — they wait with `sleep`, which is the obvious flakiness source.
+One measured trap: **Obsidian menus ignore a DOM `.click()`** (the Bases view
+switcher did, 2026-08-03); they need CDP Input events at coordinates, because
+they listen for trusted events only.
+
+**3. First specs — one per defect of that week**, the first being the one that
+matters: *clicking a control on note B writes B and leaves A byte-identical*.
+Then the phantom item, a child homonym of a root field offered when adding an
+item, a stray value kept, the warning colour rule, one write per action with key
+order preserved — and *a suggestion in a picker opened over a modal can be
+clicked*, which is the shape of bug CSS regressions take: unit tests cannot see
+it, and it takes a real click to find.
+
+**4. A free sweep.** The 24 demo fixtures are 24 known, coherent states: opening
+each and asserting that the index resolves every class and that **every declared
+child is reachable** would have caught the homonym bug the day take 021's fixture
+existed, with no dedicated test written.
+
+**Rules that keep it affordable.**
+
+- **Assert on data, never on pixels** — frontmatter, the index, the untouched
+  neighbour file. Confine the DOM to the helper file, so an Obsidian update moves
+  one file.
+- **No test hook to reach what the OS forbids** (native colour popover, file
+  dialogs, real drag). Testing through the API would stop testing the wiring, and
+  the wiring is where every one of these bugs lived. The run **prints what it did
+  not attempt** instead: a suite that skips in silence is worse than an absent
+  one.
+- **Don't duplicate the unit suite**: only the glue — recycled rows, modal
+  lifecycles, index resolution after a write.
+- **Not CI, at first.** Obsidian under xvfb is feasible but is a maintenance
+  post. The right framing is not "coverage in CI" but *the gate run before every
+  tag*.
+- Demo scenarios stay narrative; only their **fixtures** and the stage machinery
+  are shared.
+
 ## 15. Delivery phases (each = code + unit tests + doc page)
 
 - **P0 Foundations**: scaffold following the official
@@ -517,6 +644,7 @@ fields/user docs (first-write warning), not in a migration guide.
 |------|------------|
 | Bases internals drift on Obsidian update | D4 isolation + canary tests; only basesAdapter changes; graceful degradation path |
 | O(vault) per query run on huge vaults | queryCache, debounced reads; benchmark fixture in e2e |
+| Defects in the glue with Obsidian, invisible to unit tests | the pre-filming surfaces pass finds them today, by hand; automating it is designed in §14.1 — until then the pass is a person's habit, not a gate |
 | Users with YAML comments / custom formatting | documented normalization (§3.2), first-write warning in user docs |
 | Legacy fileClasses with dv options | options ignored silently (never crash on them, §13) |
 | DOM-injected indicators drift on Obsidian update (§19) | isolate the injection layer; per-surface settings flags; defensive selectors that no-op on a miss; core features (modal, menus, commands) never depend on it |
@@ -564,6 +692,15 @@ dispatcher (`promptFieldValue`/`updateField`, one `processFrontMatter` write, D5
   verify at build time; otherwise the link indicator (19.4) is the entry point.
 
 ### 19.4 Field indicator (`src/ui/indicator/`) — the fragile boundary
+
+**Surfaces that re-render need watching, not decorating once.** Reading view goes through the
+markdown post-processor; Live Preview is a CodeMirror extension; the backlinks pane, Bases views
+and **canvas** leaves are plain DOM that Obsidian rebuilds on its own schedule — a canvas every
+time its file is written. Those are handled by `watch(viewType)`: a MutationObserver per leaf,
+debounced, re-decorating what came back. A surface decorated once and not watched loses its icons
+at the first re-render, silently (measured on the schema canvas: three icons, then none after a
+resync).
+
 - A small clickable icon injected next to a file's name that opens 19.1 for that
   file. **Default: icon only** (no values shown) — the lightest, most robust
   option; showing configured field values beside it (MDM's "extra attributes")

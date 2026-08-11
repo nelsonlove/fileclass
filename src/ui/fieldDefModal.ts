@@ -3,9 +3,10 @@
  * and the per-type option settings (Number/Date/List for now — §20.3). Types we
  * don't yet have settings for keep their existing options untouched.
  */
-import { App, Modal, Notice, Setting } from "obsidian";
+import { App, ButtonComponent, Modal, Notice, Setting } from "obsidian";
 
 import { modalTitle } from "./modalTitle";
+import { attachUnsavedGuard, snapshot, UnsavedGuard } from "./unsavedGuard";
 
 import { renderFieldOptionsSettings } from "../fields/input/fieldOptionsSettings";
 import { DateFormatDefaults } from "../fields/dateFormats";
@@ -48,6 +49,11 @@ export interface FieldDefResult {
 }
 
 export class FieldDefModal extends Modal {
+	/** Snapshot of the draft as the modal opened, or as it was last saved. */
+	private opened = "";
+	private guard!: UnsavedGuard;
+	/** The footer's save button, whose label follows what the save would do. */
+	private saveButton?: ButtonComponent;
 	private name: string;
 	private type: FieldType;
 	private draft: OptionsDraft;
@@ -66,6 +72,13 @@ export class FieldDefModal extends Modal {
 			 * "Next interval field" from the compatible ones by name.
 			 */
 			classFields?: readonly Pick<Field, "name" | "type">[];
+			/**
+			 * Opens the child-fields editor of an Object/ObjectList field. Passed by
+			 * every door that edits an existing field, so the group's children are
+			 * reachable from the field itself — they used to be a button on the schema
+			 * screen only, which Alt-clicking a field's icon never goes through.
+			 */
+			onEditChildren?: () => void;
 		}
 	) {
 		super(app);
@@ -76,13 +89,79 @@ export class FieldDefModal extends Modal {
 		this.required = !!io && !Array.isArray(io) && (io.required === true || io.required === "true");
 	}
 
+	/** Everything the operator can change here, as one comparable value. */
+	private state(): unknown {
+		return { name: this.name.trim(), type: this.type, required: this.required, draft: this.draft };
+	}
+
+	private isDirty(): boolean {
+		return snapshot(this.state()) !== this.opened;
+	}
+
+	/**
+	 * Is this save a **rename** — an existing field whose name has changed? The button says so,
+	 * because what follows it is not another write to the class note but a pass over every note
+	 * that carries the old key (#108).
+	 */
+	private isRename(): boolean {
+		const initial = this.opts.initial?.name?.trim() ?? "";
+		return !!initial && this.name.trim() !== initial;
+	}
+
+	/** Commits the draft. False when it can't be saved, so the caller stays open. */
+	private commit(): boolean {
+		const name = this.name.trim();
+		if (!name) {
+			new Notice("Fileclass: a field name is required.");
+			return false;
+		}
+		this.opts.onSubmit({
+			name,
+			type: this.type,
+			options: this.withRequired(buildFieldOptions(this.type, this.draft)),
+		});
+		this.opened = snapshot(this.state()); // saved: no longer dirty
+		return true;
+	}
+
 	onOpen(): void {
 		const { contentEl } = this;
 		modalTitle(contentEl, this.opts.title);
+		this.opened = snapshot(this.state());
+		this.guard = attachUnsavedGuard(this.app, this, {
+			isDirty: () => this.isDirty(),
+			save: () => this.commit(),
+			subject: "field",
+		});
+		// Any control, including the per-type options another module renders: the
+		// listener runs after the control's own handler, so the draft is already
+		// updated when dirtiness is re-read.
+		for (const type of ["input", "change", "click"] as const) {
+			contentEl.addEventListener(type, () => {
+				this.guard.refresh();
+				this.saveButton?.setButtonText(this.isRename() ? "Save and migrate…" : "Save");
+			});
+		}
 
 		new Setting(contentEl).setName("Name").addText((t) =>
-			t.setValue(this.name).onChange((v) => (this.name = v))
+			t.setValue(this.name).onChange((v) => {
+				this.name = v;
+				// A field can't depend on itself, and the name decides which one that is.
+				renderOptions();
+			})
 		);
+
+		// Type **before** its own options, which is the order in which they are decided.
+		// It used to sit under them: choosing `Canvas` grew nine rows above the dropdown and
+		// pushed it off screen, so the control you had just used disappeared as you used it.
+		new Setting(contentEl).setName("Type").addDropdown((d) => {
+			for (const t of EDITABLE_FIELD_TYPES) d.addOption(t, TYPE_LABELS[t] ?? t);
+			d.setValue(this.type).onChange((v) => {
+				this.type = v as FieldType;
+				renderOptions();
+				renderChildren();
+			});
+		});
 
 		const optionsEl = contentEl.createDiv({ cls: "fileclass-field-options" });
 		const renderOptions = () =>
@@ -90,15 +169,23 @@ export class FieldDefModal extends Modal {
 				app: this.app,
 				dateDefaults: this.opts.dateDefaults,
 				classFields: this.opts.classFields,
+				fieldName: this.name,
 			});
 
-		new Setting(contentEl).setName("Type").addDropdown((d) => {
-			for (const t of EDITABLE_FIELD_TYPES) d.addOption(t, TYPE_LABELS[t] ?? t);
-			d.setValue(this.type).onChange((v) => {
-				this.type = v as FieldType;
-				renderOptions();
-			});
-		});
+		// Shown for a group, refreshed when the type changes — picking Object here
+		// should offer its children without a trip through the schema screen.
+		const childrenEl = contentEl.createDiv();
+		const renderChildren = () => {
+			childrenEl.empty();
+			if (!this.opts.onEditChildren) return;
+			if (this.type !== "Object" && this.type !== "ObjectList") return;
+			new Setting(childrenEl)
+				.setName("Children")
+				.setDesc("The fields inside this group.")
+				.addButton((b) =>
+					b.setButtonText("Edit children").onClick(() => this.opts.onEditChildren?.())
+				);
+		};
 
 		new Setting(contentEl)
 			.setName("Required")
@@ -106,25 +193,24 @@ export class FieldDefModal extends Modal {
 			.addToggle((t) => t.setValue(this.required).onChange((v) => (this.required = v)));
 
 		renderOptions();
+		renderChildren();
 
-		new Setting(makeStickyFooter(contentEl)).addButton((b) =>
-			b
-				.setButtonText("Save")
+		const footer = makeStickyFooter(contentEl);
+		const footerRow = new Setting(footer);
+		this.guard.mountHint(footerRow.settingEl);
+		footerRow.addButton((b) => {
+			// A rename is not the same act as editing an option: the button says so, and what
+			// follows it is a list of the notes about to be rewritten (#108). Re-read on every
+			// keystroke — the name is being typed *now*, and a label decided when the modal
+			// opened would announce the wrong act.
+			this.saveButton = b;
+			return b
+				.setButtonText(this.isRename() ? "Save and migrate…" : "Save")
 				.setCta()
 				.onClick(() => {
-					const name = this.name.trim();
-					if (!name) {
-						new Notice("Fileclass: a field name is required.");
-						return;
-					}
-					this.opts.onSubmit({
-						name,
-						type: this.type,
-						options: this.withRequired(buildFieldOptions(this.type, this.draft)),
-					});
-					this.close();
-				})
-		);
+					if (this.commit()) this.close();
+				});
+		});
 	}
 
 	/** Merges the common `required` flag into the type's options (or removes it). */

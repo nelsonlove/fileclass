@@ -17,6 +17,17 @@ either — driving a terminal with burned-in subtitles isn't tooling we have, an
 its audience reads the docs. "Coming from Metadata Menu" and "which level of
 normalization" belong in a GitHub discussion thread, not in a video.
 
+## Tour
+
+One take before the arcs, and the only one that shows the whole plugin end to end.
+
+| # | Take | Feature | Vault gains | Status |
+| - | ---- | ------- | ----------- | ------ |
+| 000 | Tour #1 — from an untyped vault to a typed library | install, class folder, a class bound by folder, `File` candidates narrowed by another field | untyped library + `Authors/` + `Authors.base` | ✅ [published](https://www.youtube.com/watch?v=rScC86I2vlg) |
+
+It is deliberately the exception to the 60-second rule (~5 min), and it can only be
+recorded once the store carries the release with #19 — the install happens on camera.
+
 ## The cast
 
 The vault is a media library, and it's the *same* library across the whole
@@ -63,58 +74,70 @@ thread, and a tight smoke test of that type's input path.
 | - | ---- | ------- | ----------- | ------ |
 | 012 | Link a note to another note | `File` (candidates from a base) | `Author` class + notes, `Authors.base` | ✅ [published](https://www.youtube.com/watch?v=orwUfnJCWT4) |
 | 013 | Translators, illustrators, several links | `MultiFile`, filter box | `Comic` class, Tintin typed, `Comic.contributors`, 15 people | ✅ [published](https://www.youtube.com/watch?v=t7avhsV-ZXk) |
-| 014 | Covers and attachments | `Media`, `MultiMedia` | `Book.cover` | |
-| 015 | Candidates that depend on another field | conditional candidates | `Comic.series` | |
+| 014 | Covers and attachments | `Media`, `MultiMedia`, thumbnails | `Images/` + `Images.base`, `Book.cover` | ✅ [published](https://www.youtube.com/watch?v=HtjfEO19p-g) |
+| 015 | Candidates that depend on another field | conditional candidates (guided, #19) | `Series` class + `Series.base`, `Comic.series` | ✅ [published](https://www.youtube.com/watch?v=862i7fYe5Iw) |
 
 ## Arc 4 — the richer types
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 016 | Templated input | `Input` template (`{{placeholder}}`) | `Book.shelf` | |
-| 016b | Dates as links to your daily notes | `Date` insert-as-link, templated `Link path`, `Link alias` | `Book.published` as a daily-note link | |
-| 017 | Pick an icon | `Icon` | `Media.icon` | |
-| 018 | Colors, and your own palette | `Color`, custom colors | `Book.genre` color | |
-| 019 | A place on a map | `Location` | `Activity.branch` | |
-| 020 | A group of fields inside a field | `Object` | detailed `Book.publisher` | |
-| 021 | A list of grouped fields | `ObjectList`, display template | `Book.editions` | |
-| 022 | When raw is the honest answer | `JSON`, `YAML` | `Album.credits` | |
+| 016 | Templated input | `Input` template (`{{placeholder}}`) | `Book.shelf` | ✅ [published](https://www.youtube.com/watch?v=OmUgluPZal0) |
+| 016b | Dates as links to your daily notes | `Date` insert-as-link, templated `Link path`, `Link alias` | `Book.review` as a daily-note link, `Daily/` | ✅ [published](https://www.youtube.com/watch?v=2eVs2J0vv6A) |
+| 017 | Pick an icon | `Icon` | `Series.icon`, five series told apart | ✅ [published](https://www.youtube.com/watch?v=TvkZfCN5rgo) |
+| 018 | Colors, and your own palette | `Color`, custom colors | `Series.color`, a saved palette | ✅ [published](https://www.youtube.com/watch?v=8t8ZaCpv9ks) |
+| 019 | A place on a map | `Location`, the Maps plugin | `Activity.branch`, four located dates | ✅ [published](https://www.youtube.com/watch?v=Hev8hrBxWj0) |
+| 020 | A group of fields inside a field | `Object`, nested properties | `Comic.storage`, a group of groups, two more albums | ✅ [published](https://www.youtube.com/watch?v=9fRoZEE2xfI) |
+| 021 | A list of grouped fields | `ObjectList`, display template | `Book.editions` | ✅ [published](https://www.youtube.com/watch?v=xHIVXu8LiEE) |
+| 022 | When raw is the honest answer | `JSON`, `YAML` | `Album.credits` (YAML), `Album.import` (JSON), a second album | ✅ [published](https://www.youtube.com/watch?v=X3s8wtbPSTU) |
 
 ## Arc 5 — modelling a class
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 023 | Fields you can't leave empty | required fields | `Book.title` required | |
-| 024 | One parent class, three children | inheritance (`extends`) | `Media` → `Book`/`Album`/`Comic` | |
-| 025 | Two classes on one note | multiple binding, global class, alias | `Article` class | |
+| 023 | Fields you can't leave empty | required fields | `Book.author` required, James Clear | ✅ [published](https://www.youtube.com/watch?v=7F5BvcUbUAc) |
+| 024 | One parent class, three children | inheritance (`extends`), `excludes`, redeclaring | `Media` → `Book`/`Album`/`Comic`, plus `Movie` and two films | ✅ [published](https://www.youtube.com/watch?v=-bQ6s6M_pkk) |
+| 025 | Two classes on one note | multiple binding, a global class every note carries | `Article` class, `Everything` (the baseline), *As We May Think*, Vannevar Bush | ✅ [published](https://www.youtube.com/watch?v=dz0JTL1bb9Y) |
+| 025b | Notes a class claims by itself | `Map with tag`, `Tag names`, `Files paths`, `Bookmark groups` — the bindings that type a note without a word in its frontmatter, picked from the vault since [#121](https://github.com/mdelobelle/fileclass/issues/121) | a `Reading list/` folder, two `#album` notes, a *Film club* bookmark group, an icon per class | ✅ [published](https://www.youtube.com/watch?v=lCiJnJr7IQ8) |
 
 ## Arc 6 — filling fields fast
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 026 | Every field of a note, one modal | note-fields modal | — | |
-| 027 | Right-click your way through it | context menus | — | |
-| 028 | Edit buttons in the properties panel | property edit buttons | — | |
-| 029 | Seeing at a glance what's typed | field indicators (tab, explorer, links, bases) | — | |
-| 030 | Change one field across a whole class | bulk edit (set-where) | — | |
-| 031 | New notes that arrive already typed | Templater / Templates | a Book template | |
+| 026 | Every field of a note, one modal | note-fields modal: rows, Alt on the type icon, Clear, the keyboard grid, and the four things in its footer | — (it works on the vault as 025b leaves it) | ✅ [published](https://www.youtube.com/watch?v=Rd7VeYbHsrE) |
+| 027 | Right-click your way through it | context menus on a note, in its text, on its tab, on a class note and on the class folder | — (works on the vault as 026 leaves it) | ✅ [published](https://www.youtube.com/watch?v=dqxv7Wrxer8) |
+| 028 | Buttons where you already edit | property edit buttons: one per typed row, the wrench on `fileClass`, the section actions, and Alt or right-click to edit the field itself | — (works on the vault as 027 leaves it) | ✅ [published](https://www.youtube.com/watch?v=ope7-S5hL94) |
+| 029 | Seeing at a glance what's typed | field indicators on all six surfaces — tab, explorer, links, backlinks, bookmarks, bases — and what each one opens | — (works on the vault as 028 leaves it) | ✅ [published](https://www.youtube.com/watch?v=zA4KadPjbNg) |
+| 030 | One field across a whole class | bulk edit (set-where): the four questions, the counted preview, and Apply carrying its number | — (works on the vault as 029 leaves it) | ✅ [published](https://www.youtube.com/watch?v=qRtYZ3lCy5c) |
+| 030b | Renaming a field, and every note that carries it | rename with frontmatter migration ([#108](https://github.com/mdelobelle/fileclass/issues/108)) — a Save of its own, the notes listed before the write, and the bases it will not touch | `Book.shelf` → `storage` | ✅ [published](https://www.youtube.com/watch?v=FJAqxSDIXac) |
+| 030c | A class that gained a field | insert missing fields across a class: the count, the list, the notes no `fileClass` line names | — (works on the vault as 030b leaves it) | ✅ [published](https://www.youtube.com/watch?v=2V_U74cGmlU) |
+| 031 | New notes that arrive already typed | Templates: the class written into a template on camera, the fields baked in once, and what a schema change does not do | `Templates/` with *New book* and *Daily note*, both classless | ✅ [published](https://www.youtube.com/watch?v=_uNtXbPQ-0M) |
 
 ## Arc 7 — Bases views
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 032 | A table for a class, generated | `Create a base for a class` | `Book.base` | |
-| 033 | Schema changed? the base follows | `Sync this class to its base` | — | |
-| 034 | Editing right in the table | `fileclass-table` view | — | |
-| 035 | What's missing, in a column | validation columns | — | |
-| 036 | A base inside a note | embedding | a dashboard note | |
+| 032 | A table for a class, generated | `Create a base for a class`: the modal, the columns in class order, the class↔base link, and a view added to a base you already keep | `Habit.base`, plus a fifth view in `Books.base` | ✅ [published](https://www.youtube.com/watch?v=tGG3ONU4sv8) |
+| 033 | Schema changed? the base follows | `Sync this class to its base`, and the base button that reads *Sync the base* while the class and its table disagree | — (works on the vault as 032 leaves it) | ✅ [published](https://www.youtube.com/watch?v=wnt_FkyFd8I) |
+| 034 | Editing right in the table | `fileclass-table`: a cell per field, each keeping its type's gesture, the Bases toolbar with its typed *New*, and the wrench that opens the class | — (opens on `Habit.base`, as 033 leaves it) | ✅ [published](https://www.youtube.com/watch?v=EQTOTgjfuKs) |
+| 035 | What's missing, in a column | validation columns: three kinds of failure, the count in the header, and the filter it carries ([#142](https://github.com/mdelobelle/fileclass/issues/142)) | — (opens on `Books.base` › *Book*, as 034 leaves it) | ✅ [published](https://www.youtube.com/watch?v=4qNflzfclNI) |
+| 036 | A base inside a note | embedding: `![[x.base]]` and a `base` block, both editable, each with its own toolbar | a dashboard note, written on camera | ✅ [published](https://www.youtube.com/watch?v=6I9YZNaoqnc) |
 
 ## Arc 8 — canvas and settings
 
 | # | Take | Feature | Vault gains | Status |
 | - | ---- | ------- | ----------- | ------ |
-| 037 | A field that follows your canvas | `Canvas` | a reading-map canvas | |
-| 038 | Groups on a canvas as data | `CanvasGroup`, `CanvasGroupLink` | — | |
-| 039 | The settings, one pass | behaviour toggles, indicators, defaults | — | |
+| 037 | A field that follows your canvas | `Canvas`: the graph as a source, the engine writing by itself, and the filters that narrow it | `Reading map.canvas` (six books, four edges) | ✅ [published](https://www.youtube.com/watch?v=xeccqChw1kA) |
+| 038 | Groups on a canvas as data | `CanvasGroup`, `CanvasGroupLink`: the box a note sits in, what the box is wired to, and geometry as the rule | two groups on `Reading map.canvas`, and the activity one of them feeds | ✅ [published](https://www.youtube.com/watch?v=smt6cu8PLnE) |
+| 039 | The model your classes make | the schema canvas ([#149](https://github.com/mdelobelle/fileclass/issues/149)): every class with its fields, inheritance, the bases and canvases they depend on, what each claims — and an arrangement that survives a resync | `Classes/Schema.canvas` | ✅ [published](https://www.youtube.com/watch?v=zp6jflaZwj0) |
 
-**41 takes** (39 numbered, plus `010b` and `016b` — facets that earned their own
-take), roughly 50 minutes of finished video.
+**44 takes published**, 109 minutes of finished video — the whole series, arcs 1
+to 8. Numbered 000 to 039, with `010b`, `016b`, `025b`, `030b` and `030c` as facets
+that earned their own take.
+
+What is deliberately not filmed, gathered in one place: `Formula` and `Lookup`
+(outside the plugin's scope), the CLI (a terminal under burned-in subtitles is not
+tooling we have, and its audience reads), the **settings tab** (a tab that describes
+itself row by row, with [a page](https://mdelobelle.github.io/fileclass/settings/)
+that says the rest — a film of twelve toggles teaches nothing a reader cannot get
+faster by scrolling), and "coming from Metadata Menu" (a discussion thread, not a
+video).

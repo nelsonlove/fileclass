@@ -12,7 +12,32 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 /** Step keys we recognise; anything else on a `- ` line is the title itself. */
-const STEP_KEYS = new Set(["title", "pause", "hold", "note"]);
+/**
+ * `input:` is a value the operator would otherwise type on camera — coordinates, a
+ * link, a long id. The caption shows it, and ⌘⌃⌥⇧I types it into whatever field is
+ * focused, which keeps a take from becoming a typing lesson. Several values in one
+ * step are separated by ` | ` and typed one per press, since a step that fills three
+ * boxes must not dump all three into the first one.
+ *
+ * `values:` is the other half: values short enough that the operator types them by
+ * hand. The caption shows them, in a different colour so it is obvious no chord will
+ * type them, and the narration doesn't read them out.
+ */
+const STEP_KEYS = new Set(["title", "pause", "hold", "note", "input", "values"]);
+
+/**
+ * Splits a ` | `-separated list of values; a single value stays a one-item list.
+ *
+ * A `\n` inside a value becomes a real newline: a YAML or JSON block is typed into one
+ * box in one go, so it is one value — not one per line — and the chord must send the
+ * line breaks with it.
+ */
+export function splitValues(raw) {
+	return String(raw)
+		.split(" | ")
+		.map((v) => v.trim().replace(/\\n/g, "\n"))
+		.filter(Boolean);
+}
 
 const ROOT_KEYS = new Set([
 	"title",
@@ -171,6 +196,8 @@ export function parseScenario(text, source = "scenario.yaml") {
 			title: String(s.title),
 			pause: duration(s.pause, defaultPause),
 			hold: s.hold === true,
+			input: s.input === undefined ? [] : splitValues(s.input),
+			values: s.values === undefined ? [] : splitValues(s.values),
 		})),
 	};
 }

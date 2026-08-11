@@ -15,6 +15,8 @@ import { Field } from "../../schema/field";
 import { describeField, DisplayDeps, renderObjectItem } from "../objectDisplay";
 import { cloneDraft, validateObjectDraft } from "../objectDraft";
 import { makeStickyFooter } from "../../ui/modalFooter";
+import { attachRowGrid } from "../../ui/rowGridKeyboard";
+import { attachUnsavedGuard, snapshot, UnsavedGuard } from "../../ui/unsavedGuard";
 
 /** Opens the input for a child field, calling back with its new value. */
 export type ChildPrompt = (
@@ -25,6 +27,12 @@ export type ChildPrompt = (
 
 interface ObjectEditorOptions {
 	title: string;
+	/**
+	 * The text of a value that isn't a group at all — what the field held before it
+	 * became one. Shown, and protected: saving an untouched empty draft over it used
+	 * to replace it with `{}` without a word.
+	 */
+	stray?: string | null;
 	/** The Object/ObjectList field being edited (for its display template). */
 	field: Field;
 	childFields: Field[];
@@ -35,6 +43,11 @@ interface ObjectEditorOptions {
 /** Edits a single object's fields. */
 export class ObjectFieldsEditorModal extends Modal {
 	private readonly draft: Record<string, unknown>;
+	/** Detaches the arrow-key grid of the current render. */
+	private detachGrid?: () => void;
+	/** Snapshot of the draft as opened, or as last saved. */
+	private opened = "";
+	private guard!: UnsavedGuard;
 
 	constructor(
 		app: App,
@@ -48,7 +61,28 @@ export class ObjectFieldsEditorModal extends Modal {
 	}
 
 	onOpen(): void {
+		this.opened = snapshot(this.draft);
+		// Attached once: render() rebuilds the content, and wrapping close on every
+		// render would nest one wrapper per keystroke.
+		this.guard = attachUnsavedGuard(this.app, this, {
+			isDirty: () => snapshot(this.draft) !== this.opened,
+			save: () => this.commit(),
+			subject: "group",
+		});
 		this.render();
+	}
+
+	/** Commits the draft. False when it can't be saved, so the caller stays open. */
+	private commit(): boolean {
+		if (keptStray(this.opts.stray, Object.keys(this.draft).length)) return false;
+		const error = validateObjectDraft(this.opts.childFields, this.draft);
+		if (error) {
+			new Notice(`Fileclass: ${error}`);
+			return false;
+		}
+		this.opts.onSave(this.draft);
+		this.opened = snapshot(this.draft);
+		return true;
 	}
 
 	private render(): void {
@@ -59,13 +93,25 @@ export class ObjectFieldsEditorModal extends Modal {
 		if (!this.opts.childFields.length) {
 			contentEl.createEl("p", { text: "This object has no fields defined." });
 		}
+		showStray(contentEl, this.opts.stray);
+
+		// The value rows live in their own container so the arrow keys can walk them
+		// without reaching the footer.
+		const listEl = contentEl.createDiv({ cls: "fileclass-field-list" });
 
 		for (const child of this.opts.childFields) {
 			const value = this.draft[child.name];
-			new Setting(contentEl)
+			new Setting(listEl)
 				.setName(child.name)
 				.setDesc(child.type)
-				.then((s) => s.controlEl.createSpan({ text: describeField(child, value, this.opts.deps) }))
+				// Classed, so the reading of a child's value is the size of every other value
+				// we show rather than the modal's body text.
+				.then((s) =>
+					s.controlEl.createSpan({
+						cls: "fileclass-object-value",
+						text: describeField(child, value, this.opts.deps),
+					})
+				)
 				.addButton((b) =>
 					b.setButtonText("Edit").onClick(() =>
 						this.opts.promptChild(child, value, (v) => {
@@ -86,23 +132,28 @@ export class ObjectFieldsEditorModal extends Modal {
 				);
 		}
 
-		new Setting(makeStickyFooter(contentEl)).addButton((b) =>
+		this.detachGrid?.();
+		this.detachGrid = attachRowGrid(listEl, {
+			rowSelector: ":scope > .setting-item",
+			actionSelector: "button, .clickable-icon",
+			preferred: "Edit",
+		});
+
+		const footer = makeStickyFooter(contentEl);
+		const footerRow = new Setting(footer);
+		this.guard.mountHint(footerRow.settingEl);
+		footerRow.addButton((b) =>
 			b
 				.setButtonText("Save")
 				.setCta()
 				.onClick(() => {
-					const error = validateObjectDraft(this.opts.childFields, this.draft);
-					if (error) {
-						new Notice(`Fileclass: ${error}`);
-						return;
-					}
-					this.opts.onSave(this.draft);
-					this.close();
+					if (this.commit()) this.close();
 				})
 		);
 	}
 
 	onClose(): void {
+		this.detachGrid?.();
 		this.contentEl.empty();
 	}
 }
@@ -110,6 +161,11 @@ export class ObjectFieldsEditorModal extends Modal {
 /** Manages an array of objects: add, edit, remove, reorder. */
 export class ObjectListEditorModal extends Modal {
 	private readonly draft: Record<string, unknown>[];
+	/** Detaches the arrow-key grid of the current render. */
+	private detachGrid?: () => void;
+	/** Snapshot of the draft as opened, or as last saved. */
+	private opened = "";
+	private guard!: UnsavedGuard;
 
 	constructor(
 		app: App,
@@ -123,19 +179,55 @@ export class ObjectListEditorModal extends Modal {
 	}
 
 	onOpen(): void {
+		this.opened = snapshot(this.draft);
+		this.guard = attachUnsavedGuard(this.app, this, {
+			isDirty: () => snapshot(this.draft) !== this.opened,
+			save: () => this.commit(),
+			subject: "list",
+		});
 		this.render();
 	}
 
+	/** Commits the draft. False when it can't be saved, so the caller stays open. */
+	private commit(): boolean {
+		if (keptStray(this.opts.stray, this.draft.length)) return false;
+		this.opts.onSave(this.draft);
+		this.opened = snapshot(this.draft);
+		return true;
+	}
+
 	private editItem(index: number): void {
+		this.openItem(index, this.draft[index] ?? {}, (object) => {
+			this.draft[index] = object;
+		});
+	}
+
+	/**
+	 * A new item exists only once its editor is saved. Pushing it first and editing
+	 * in place looked equivalent and wasn't: cancelling the editor left an empty item
+	 * in the draft that no row showed — the list still read "2 items" — and the next
+	 * Save wrote `{}` into the frontmatter.
+	 */
+	private addItem(): void {
+		this.openItem(this.draft.length, {}, (object) => {
+			this.draft.push(object);
+		});
+	}
+
+	private openItem(
+		index: number,
+		initial: Record<string, unknown>,
+		place: (object: Record<string, unknown>) => void
+	): void {
 		new ObjectFieldsEditorModal(this.app, {
 			title: `${this.opts.title} — item ${index + 1}`,
 			field: this.opts.field,
 			childFields: this.opts.childFields,
 			promptChild: this.opts.promptChild,
 			deps: this.opts.deps,
-			initial: this.draft[index] ?? {},
+			initial,
 			onSave: (object) => {
-				this.draft[index] = object;
+				place(object);
 				this.render();
 			},
 		}).open();
@@ -152,9 +244,12 @@ export class ObjectListEditorModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		modalTitle(contentEl, this.opts.title);
+		showStray(contentEl, this.opts.stray);
+
+		const listEl = contentEl.createDiv({ cls: "fileclass-field-list" });
 
 		this.draft.forEach((item, index) => {
-			new Setting(contentEl)
+			new Setting(listEl)
 				.setName(`Item ${index + 1}`)
 				.setDesc(renderObjectItem(this.opts.field, item, this.opts.deps) || "(empty)")
 				.addExtraButton((b) =>
@@ -175,25 +270,51 @@ export class ObjectListEditorModal extends Modal {
 				);
 		});
 
-		new Setting(makeStickyFooter(contentEl))
+		this.detachGrid?.();
+		this.detachGrid = attachRowGrid(listEl, {
+			rowSelector: ":scope > .setting-item",
+			actionSelector: "button, .clickable-icon",
+			preferred: "Edit",
+		});
+
+		const footer = makeStickyFooter(contentEl);
+		const footerRow = new Setting(footer);
+		this.guard.mountHint(footerRow.settingEl);
+		footerRow
 			.addButton((b) =>
-				b.setButtonText("Add item").onClick(() => {
-					this.draft.push({});
-					this.editItem(this.draft.length - 1);
-				})
+				b.setButtonText("Add item").onClick(() => this.addItem())
 			)
 			.addButton((b) =>
 				b
 					.setButtonText("Save")
 					.setCta()
 					.onClick(() => {
-						this.opts.onSave(this.draft);
-						this.close();
+						if (this.commit()) this.close();
 					})
 			);
 	}
 
 	onClose(): void {
+		this.detachGrid?.();
 		this.contentEl.empty();
 	}
+}
+
+/** Shows the value the field holds when that value isn't a group. */
+function showStray(contentEl: HTMLElement, stray?: string | null): void {
+	if (!stray) return;
+	const line = contentEl.createDiv({ cls: "fileclass-current-value" });
+	line.createSpan({ text: "Current value, not a group yet: ", cls: "fileclass-current-value-label" });
+	line.createSpan({ text: stray });
+}
+
+/**
+ * True when the save should be refused: nothing was entered and the field holds a
+ * value that isn't a group. Writing then would destroy it silently; Clear on the
+ * field is how you remove a value on purpose.
+ */
+function keptStray(stray: string | null | undefined, entries: number): boolean {
+	if (!stray || entries > 0) return false;
+	new Notice("Fileclass: nothing entered — the current value is kept. Use Clear to remove it.");
+	return true;
 }

@@ -10,7 +10,7 @@
  * Metadata Menu's `livePreview.ts`.
  */
 import { getLinkpath, editorInfoField, TFile } from "obsidian";
-import { RangeSetBuilder } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect } from "@codemirror/state";
 import { syntaxTree, tokenClassNodeProp } from "@codemirror/language";
 import {
 	Decoration,
@@ -22,10 +22,21 @@ import {
 } from "@codemirror/view";
 
 import type FileclassPlugin from "../../../main";
-import { fileWithFields, makeIndicatorIcon } from "./indicatorDom";
+import { indicatorTargetFile, makeIndicatorIcon } from "./indicatorDom";
 
 /** Scope class for CM-managed widgets — never touched by the DOM removers. */
 const LP_SCOPE = "fileclass-indicator--lp";
+
+/**
+ * Tells an open editor to build its widgets again.
+ *
+ * A ViewPlugin builds on construction and rebuilds on doc or viewport changes — none of which
+ * happens when the *index* becomes ready. At startup the editor is created before the classes
+ * are parsed, so every link resolved to "no fields", nothing painted, and the icons only
+ * appeared once you navigated away and came back. Measured on the take that shows them: 0 icons
+ * on the note the vault opens on, 1 after a round trip.
+ */
+export const refreshLivePreviewIndicators = StateEffect.define<null>();
 
 class IndicatorWidget extends WidgetType {
 	constructor(private readonly plugin: FileclassPlugin, private readonly file: TFile) {
@@ -56,7 +67,10 @@ export function buildLivePreviewExtension(plugin: FileclassPlugin) {
 			}
 
 			update(update: ViewUpdate): void {
-				if (update.docChanged || update.viewportChanged) {
+				const asked = update.transactions.some((tr) =>
+					tr.effects.some((e) => e.is(refreshLivePreviewIndicators))
+				);
+				if (update.docChanged || update.viewportChanged || asked) {
 					this.decorations = this.build(update.view);
 				}
 			}
@@ -100,7 +114,7 @@ export function buildLivePreviewExtension(plugin: FileclassPlugin) {
 									getLinkpath(text),
 									sourcePath
 								);
-								const file = dest && fileWithFields(plugin, dest.path);
+								const file = dest && indicatorTargetFile(plugin, dest.path);
 								if (file) {
 									pending = {
 										deco: Decoration.widget({

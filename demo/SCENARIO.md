@@ -68,6 +68,25 @@ and the recurring cast of the media library. Take the number from there rather
 than inventing one, and use the same works and people — a class introduced in one
 take is the one queried three takes later.
 
+## 2b. Tours are a different genre
+
+`000_tour_first_look` is the catalogue's entry point and the one take that breaks the
+60-second budget on purpose: ~270 words, ~5 minutes, store install included. It ends by
+pointing at the numbered series and the docs, so it never has to cover everything — one
+type gets the spotlight (`File`, whose candidate list narrows itself) and the rest are
+named and left to their own takes.
+
+A tour starts from **nothing**: no class folder, no class, `plugin: false`, no
+`settings:` block — pre-filling the class folder would delete its first act. Two
+consequences to carry into any future tour:
+
+- the **store** version must already contain what the tour shows, since the install is
+  performed on camera. Tour #1 demonstrates the dependency builder (#19), so it can only
+  be recorded once the release carrying it is live: **release first, then record**;
+- a class bound by folder (`Files paths`) never writes `fileClass:` into its notes, so a
+  base filtering on `fileClass == "…"` sees none of them. Scope such a base **by folder**.
+  That one was caught by rehearsal, not by reading.
+
 ## 3. Write `scenario.yaml`
 
 ```yaml
@@ -98,6 +117,13 @@ Keys are forgiving: `initial pause` works as well as `initial_pause`, a step may
 be a bare line (`- Save the schema`), and durations accept `1500`, `"1.5s"` or
 `"800ms"`. Quote any title containing a colon. Unknown keys are an error, on
 purpose — a typo'd key must not silently do nothing.
+
+**`doc:` must resolve.** Its value becomes the *Docs:* line of the published YouTube
+description, so a wrong page leaves the site through a channel nobody re-reads — take 023
+went out pointing at `schema/#required-fields` when the section lives in `fields.md`.
+`smoke.mjs` now prints a **Docs link** line and names the page that does hold the anchor,
+computing the slug the way Hugo does (checked against all 101 headings of the docs, no
+mismatch). Check it before recording, not after uploading.
 
 **How a take is clocked:** the operator arms the screen recorder and cues once to
 start — nothing runs on a timer before that. `initial_pause` is the blank beat
@@ -189,7 +215,47 @@ Over budget with every step earning its place? Shorten the **words**: the
 says "ISO". Or merge two steps into one idea. Never shave the pauses — those are what
 make a take readable.
 
+A few things are pronounced for you, in `lib/voice.mjs`: identifiers (`fileClass` →
+"file class"), `id` as two letters, `lat, lon` in full — and a **take number written
+`016` is read "sixteen"**, since `say` otherwise spells the padded form out digit by
+digit. Versions and dates are left alone.
+
 ## 5. Build `demo-vault/` — the smallest vault that makes the story possible
+
+- **Open the vault where the take starts.** Set `.obsidian/workspace.json` so the first
+  frame already shows the most relevant thing: the note the take works on, or the base view
+  it is about. A take that opens on last take's note spends its first seconds navigating,
+  and navigation is the one thing no viewer needs to watch. A leaf on a base reads
+  `{"type":"bases","state":{"file":"Books.base","viewName":"No author yet"}}` — measured, and
+  the `viewName` matters: without it the base opens on its first view.
+- **The staged vault gets `shorterModal` and movable modals.** `stage.mjs` writes it into `data.json` for every
+  take: the plugin's modals lose 90px and pin themselves 45px from the top, so a note with
+  sixteen fields stops reaching into the subtitles burned along the bottom of the frame. It is
+  deliberately absent from the settings pane — nobody but a screen recorder wants it — and a
+  scenario can turn it off by putting `shorterModal: false` in its own `settings:` block.
+  `enableDraggableModals` is on for the same reason: a take should be able to pull a modal
+  aside when it covers what the step is about, rather than closing and reopening it. The plugin
+  ships that setting off — it is experimental — so the takes turn it on here, and a scenario
+  can say `enableDraggableModals: false` if a step needs the default behaviour.
+
+- **A caption gets out of the way of a menu by itself.** Obsidian's menus open where the
+  pointer is and grow downward, so a right-click in the lower half of the window lands behind
+  the caption. The overlay watches for one and lifts the caption to the top while it is open,
+  dropping back when it closes — and only when the top is free, so a menu opened near the top
+  is not handed the same problem upside down. ⌘⌃⌥⇧U still lifts it by hand for everything else;
+  a menu closes on the next click, which is far too fast to reach for a chord.
+
+- **Give every class its own icon.** A vault whose classes all wear the plugin's default icon
+  makes the explorer a wall of identical marks, and a viewer cannot tell a book from a film
+  without reading. One `icon:` per class in the fixture — `book`, `disc-3`, `film`,
+  `book-open`, `user-round`, `layers`, `calendar`, `newspaper`, `library` — and the binding of
+  a note becomes legible in a frame that was showing it anyway. Check what actually paints
+  rather than trusting the name: a Lucide id that does not exist falls back silently.
+
+- **Only show what earlier takes have introduced.** The series is cumulative, so a surface
+  that has its own take later must not carry a step here — `fileclass-table` and its
+  validation columns belong to arc 7, so take 023 makes its point with a plain Bases view and
+  a filter instead. An incidental appearance on screen is fine; a step built on it is not.
 
 - Only what the viewer sees: notes, folders, `.base` files. Two or three notes is
   usually plenty, and their content should be prose that *wants* structure (the
@@ -214,6 +280,34 @@ make a take readable.
 - The fixture is pristine and read-only: `record.mjs` copies it to
   `~/fileclass-demos/<scenario>/<vault_name>` and wipes that copy after the take,
   so a botched run costs nothing.
+
+## Poking at a staged vault (`probe.mjs`)
+
+To check something against the real app — a picker's contents, what a gesture
+writes, a computed style — put it in a throwaway module and let `probe.mjs` own the
+lifecycle:
+
+```bash
+node probe.mjs 014 /tmp/check-thumbnails.mjs        # stage, run, put everything back
+node probe.mjs 014 /tmp/check.mjs --keep            # leave it open to look at it
+```
+
+```js
+export default async function ({ stage, page, vault, sleep }) {
+	console.log(await page.evaluate(() => window.app.vault.getName()));
+}
+```
+
+It stages the fixture, launches Obsidian, **waits until the plugin is actually
+loaded** (about 1.3s — no fixed sleep), runs the module, and tears down in a
+`finally`: quit, vault list restored, staged vault wiped. Same on a throw, and on
+SIGINT — all three verified, because the habit it replaces (backgrounding
+`smoke.mjs` behind a `sleep 300` pipe) left Obsidian open on a staged vault
+whenever the probe finished early or died, and someone had to quit it by hand.
+
+The vault list is also backed up **on disk** now, so a run killed hard enough to
+skip its own teardown can still be undone — `restoreVaultRegistryFromDisk()` in
+`lib/stage.mjs`.
 
 ## 6. Verify before handing it over
 
@@ -260,9 +354,19 @@ node record.mjs 002 --no-keys    # hide the pressed-keys badge
 
 It quits your Obsidian (asks first), stages the vault, relaunches Obsidian on it
 with `--remote-debugging-port=9222`, and waits for Enter so you can start
-QuickTime. Then **⌘⌃⌥⇧C in Obsidian** advances the narration (Enter in the
+QuickTime. With `--speak` it says **"ready"** just before waiting: an audible
+"armed" without looking away from Obsidian, and it pays the voice's one-time
+startup off-camera — measured at about a second, which the first subtitle used to
+absorb. A cue pressed during that word still counts. Then **⌘⌃⌥⇧C in Obsidian** advances the narration (Enter in the
 terminal also works; `q` or Ctrl-C aborts and cleans up). At the end it quits
 Obsidian, restores your vault list and wipes the demo vault.
+
+If a caption covers what the step is about — a setting low in a pane, the controls of a picker — **⌘⌃⌥⇧U** lifts it to the top of the screen, and the key badge with it. Press it again to drop it back; the next subtitle starts at the bottom either way, so a raised caption never leaks into the following step.
+
+A step may also carry values, shown in the caption and spoken nowhere — the narration reads the step's title, not eighteen digits. Two kinds, told apart by colour:
+
+- **`input:`** — what the operator would otherwise type on camera: coordinates, a link, a long id. Shown in **yellow**, and **⌘⌃⌥⇧I** types it into whatever field is focused: real keystrokes, so the field's own handlers run and the viewer sees the text appear. Several values in one step are written `input: "Attic | B | 1"` and served **one per press**, struck through in the caption as they go — a step that fills three boxes must not dump all three into the first one. ` | ` is the separator precisely because a single value may hold a comma and a space.
+- **`values:`** — short words the operator types by hand. Shown in **blue**, so it is obvious at a glance that no chord will insert them and there is nothing to wait for. Same ` | ` list. Use these when a take fills more boxes than the cue is worth: pressing a chord eleven times has its own rhythm cost.
 
 **Keys you press show up on screen.** A badge under the caption names the special
 keys as they happen — `⏎`, `⌥⏎`, `⇥`, `⎋`, and `⏎ ×3` when you chain the same one —
@@ -279,7 +383,15 @@ Gotchas worth knowing:
 
 - Obsidian may ask to trust the vault / turn off Restricted mode the first time
   it opens a staged vault. In `001` that prompt is part of the story; elsewhere,
-  accept it before cueing step 1.
+  accept it before cueing step 1. `record.mjs`, `smoke.mjs` and `probe.mjs` accept
+  it for you (`lib/trust.mjs`) — the plugin does not load until it is answered.
+  Accepting it sometimes leaves **Settings → Community plugins** showing, in its own
+  window in this build; the tooling tries to close it and does not always win, so
+  glance at the screen before cueing step 1.
+- A staged vault ships with **Always update links** and no delete prompt, so a
+  rename or a delete on camera doesn't raise a dialog you'd have to dismiss mid-take
+  (`lib/stage.mjs`, `app.json` defaults). A fixture that wants the prompt can commit
+  its own `.obsidian/app.json` — the defaults only fill in what a fixture omits.
 - The file right-click menu opens in its own window — fine here, since you're the
   one clicking, and the subtitle stays visible in every window.
 - With `--keep`, Obsidian stays open on the demo vault, so *it* will mark that

@@ -7,13 +7,17 @@
  * Feature logic lives under src/. No Bases/private-internal access happens
  * here — only via the adapter.
  */
-import { Notice, Plugin, TAbstractFile, TFile, debounce } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, WorkspaceLeaf, debounce } from "obsidian";
 
 import { setPlugin, clearPlugin } from "./src/globals";
-import { isBasesAvailable } from "./src/engine/basesAdapter";
+import { isBasesAvailable, onCorePluginChange } from "./src/engine/basesAdapter";
 import { QueryCache } from "./src/engine/queryCache";
 import { createFileClass } from "./src/commands/createFileClass";
 import { insertMissingFields } from "./src/commands/insertMissingFields";
+import { syncSchemaCanvas } from "./src/views/schemaCanvasSync";
+import { bulkInsertMissingFields } from "./src/commands/bulkInsertMissing";
+import { ChoiceSuggestModal } from "./src/fields/input/valueModals";
+import { reorderFrontmatter } from "./src/io/reorderFrontmatter";
 import { pickAndUpdateField } from "./src/fields/fieldActions";
 import { FILECLASS_EXTENSION, isFileClassPath } from "./src/schema/constants";
 import { FileclassIndex } from "./src/schema/fileclassIndex";
@@ -33,6 +37,7 @@ import { createFileclassApi, FileclassApi } from "./src/api/fileclassApi";
 import { CanvasEngine } from "./src/fields/canvas/canvasEngine";
 import { FieldIndicator } from "./src/ui/indicator/fieldIndicator";
 import { LinkIndicator } from "./src/ui/indicator/linkIndicator";
+import { applyDraggableModals, applyShorterModals } from "./src/ui/modalDrag";
 import { registerPrimaryActionShortcut } from "./src/ui/primaryAction";
 import { PropertyEditButtons } from "./src/ui/propertyEditButtons";
 import { NoteFieldsModal } from "./src/ui/noteFieldsModal";
@@ -69,6 +74,9 @@ export default class FileclassPlugin extends Plugin {
 	 */
 	basesAvailable = false;
 
+	/** True between a successful view registration and its unregister. */
+	private tableViewRegistered = false;
+
 	async onload(): Promise<void> {
 		setPlugin(this);
 		await this.loadSettings();
@@ -90,6 +98,12 @@ export default class FileclassPlugin extends Plugin {
 		this.api = createFileclassApi(this);
 
 		this.addSettingTab(new FileclassSettingTab(this.app, this));
+		// Movable modals are experimental and off by default; the CSS half is gated on a
+		// body class, and it goes away with the plugin.
+		applyDraggableModals(this.settings.enableDraggableModals);
+		this.register(() => applyDraggableModals(false));
+		applyShorterModals(!!this.settings.shorterModal);
+		this.register(() => applyShorterModals(false));
 		this.addChild(new FileclassContextMenu(this));
 		this.indicator = this.addChild(new FieldIndicator(this));
 		this.linkIndicator = this.addChild(new LinkIndicator(this));
@@ -106,15 +120,55 @@ export default class FileclassPlugin extends Plugin {
 			this.registerFileclassTableView();
 			void this.index.rebuild();
 		});
+
+		// Bases can be switched on after we loaded; without this the session stays in
+		// degraded mode until Obsidian restarts.
+		this.register(onCorePluginChange(this.app, () => this.refreshBasesAvailability()));
 	}
 
-	/** Registers the editable fileclass-table Bases view when Bases is available. */
+	/**
+	 * Registers the editable fileclass-table Bases view when Bases is available.
+	 *
+	 * Retried whenever Bases becomes available, not just at layout-ready: the bases
+	 * this plugin generates ask for the `fileclass-table` view type, and a session
+	 * that missed its one registration renders them as "Unknown view type:
+	 * fileclass-table" — an error on a file Fileclass itself wrote. A failure is
+	 * logged rather than swallowed, for the same reason: silence here surfaces much
+	 * later, somewhere unrelated.
+	 */
 	private registerFileclassTableView(): void {
-		if (!this.basesAvailable) return;
+		if (!this.basesAvailable || this.tableViewRegistered) return;
 		try {
-			this.register(registerFileclassTableView(this));
-		} catch {
-			/* Bases internals drifted — the view is optional, degrade silently. */
+			const unregister = registerFileclassTableView(this);
+			this.tableViewRegistered = true;
+			this.register(() => {
+				this.tableViewRegistered = false;
+				unregister();
+			});
+			this.rebuildOpenBases();
+		} catch (e) {
+			console.error(
+				"Fileclass: could not register the editable fileclass-table Bases view — " +
+					"generated bases will report an unknown view type until this succeeds.",
+				e
+			);
+		}
+	}
+
+	/**
+	 * Rebuilds the base views already on screen, because registration always arrives late.
+	 *
+	 * Obsidian restores its tabs before `onLayoutReady`, so a vault closed on a generated base
+	 * reopens on **"Unknown view type: fileclass-table"** — an error on a file this plugin
+	 * wrote, over a table that works everywhere else. The same applies the moment Bases is
+	 * switched back on with one of those bases open.
+	 *
+	 * Measured: re-setting the leaf's own view state changes nothing (Obsidian skips a no-op
+	 * state change); rebuilding the view is what clears it.
+	 */
+	private rebuildOpenBases(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType("bases")) {
+			(leaf as WorkspaceLeaf & { rebuildView?: () => void }).rebuildView?.();
 		}
 	}
 
@@ -175,6 +229,42 @@ export default class FileclassPlugin extends Plugin {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
 				if (!checking) void insertMissingFields(this.app, file, this.index.getFields(file));
+				return true;
+			},
+		});
+
+		this.addCommand({
+			id: "reorder-frontmatter-in-current-file",
+			name: "Reorder frontmatter to match the class",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== "md") return false;
+				if (!checking) void this.reorderCurrent(file);
+				return true;
+			},
+		});
+
+		this.addCommand({
+			id: "insert-missing-fields-across-a-class",
+			name: "Insert missing fields across a class",
+			checkCallback: (checking) => {
+				const names = this.index.fileClassNames;
+				if (!names.length) return false;
+				if (!checking) {
+					// The class of the note in front of you, when there is one — the same courtesy
+					// the bulk edit command does; otherwise, ask.
+					const active = this.app.workspace.getActiveFile();
+					const current = active ? this.index.fileClassNameOfNote(active.path) : undefined;
+					if (current) void bulkInsertMissingFields(this, current);
+					else
+						new ChoiceSuggestModal(
+							this.app,
+							[...names].sort((a, b) => a.localeCompare(b)),
+							(n) => n,
+							(n) => void bulkInsertMissingFields(this, n),
+							"Insert missing fields across which class?"
+						).open();
+				}
 				return true;
 			},
 		});
@@ -250,6 +340,46 @@ export default class FileclassPlugin extends Plugin {
 				return true;
 			},
 		});
+
+		// #149 — the model a vault's classes make, drawn. Explicit, like the base sync: the file
+		// is arranged by hand, so it is never written unasked.
+		this.addCommand({
+			id: "draw-schema-canvas",
+			name: "Draw the schema canvas",
+			checkCallback: (checking) => {
+				if (!this.index.fileClassNames.length) return false;
+				if (!checking) void syncSchemaCanvas(this);
+				return true;
+			},
+		});
+	}
+
+	/**
+	 * Reorders a note's frontmatter to its class's field order, and says what it did — a
+	 * command that rewrites a file and then says nothing leaves you wondering whether it ran.
+	 */
+	private async reorderCurrent(file: TFile): Promise<void> {
+		const fields = this.index.getFields(file);
+		if (!fields.length) {
+			new Notice("Fileclass: this note has no class, so there is no order to match.");
+			return;
+		}
+		const { moved, unpositionable } = await reorderFrontmatter(
+			this.app,
+			file,
+			fields,
+			this.settings.unknownKeysPosition
+		);
+		if (!moved) {
+			new Notice("Fileclass: the frontmatter is already in the class's order.");
+			return;
+		}
+		// A key YAML re-sorts on its own would make the promise false; name it rather than
+		// leave the user to spot it.
+		const caveat = unpositionable.length
+			? ` (${unpositionable.join(", ")} stays where YAML puts it)`
+			: "";
+		new Notice(`Fileclass: reordered ${moved} keys${caveat}.`);
 	}
 
 	private registerVaultListeners(): void {
@@ -286,13 +416,18 @@ export default class FileclassPlugin extends Plugin {
 		const available = isBasesAvailable(this.app);
 		if (available === this.basesAvailable) return;
 		this.basesAvailable = available;
-		if (!available) {
-			new Notice(
-				"Fileclass: the core Bases plugin is disabled or incompatible. " +
-					"Schema and typed input still work; query-dependent features " +
-					"(File/Media fields, generated views) are disabled.",
-				10000
-			);
+		if (available) {
+			// Bases arrived after we loaded — enabled by hand, or loaded late. Nothing
+			// else re-runs the view registration, so a generated base would stay
+			// unrenderable for the rest of the session.
+			this.registerFileclassTableView();
+			return;
 		}
+		new Notice(
+			"Fileclass: the core Bases plugin is disabled or incompatible. " +
+				"Schema and typed input still work; query-dependent features " +
+				"(File/Media fields, generated views) are disabled.",
+			10000
+		);
 	}
 }

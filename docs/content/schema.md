@@ -67,6 +67,8 @@ Each entry in `fields` is `{ name, id, type, options, path }`:
 
 ## Inheritance
 
+{{< video "024" >}}
+
 A fileClass may `extends` one parent, forming a chain (`Child → Parent → …`).
 The chain is **cycle-guarded**: a self-reference or loop simply stops.
 
@@ -75,27 +77,100 @@ by field name** (the nearest declaration wins). `excludes` removes inherited
 fields and **accumulates down the chain**: a class's excluded names are dropped
 from that class and every deeper ancestor.
 
+`Extends` is a **dropdown** over the fileClasses you have — never the class itself, and
+never one that already inherits from it (that would be a cycle). A parent that doesn't exist
+inherits nothing, so there is nothing to gain from typing a name; a value that no longer
+resolves (a renamed class, a hand-edited note) stays in the list marked *no such fileClass*,
+so the declaration is visible rather than lost.
+
+`Excludes` — the inherited fields this class drops — is picked from the parent's own fields,
+never typed: a misspelled name excluded nothing and said nothing. With no parent, there is
+nothing to choose and the row says so.
+
+Beside it, a link opens the parent's schema — a class's editor lists its **own** fields only,
+since showing an ancestor's there would leave you wondering which copy you were editing. The
+link appears only when the name resolves.
+
 ## Binding a note to fileClass(es)
 
+{{< video "025" >}}
+
 A note can be bound to one or more fileClasses. When several sources apply, they
-are combined in this priority order (fields de-duplicated by id):
+are combined in this priority order:
 
 1. **Frontmatter alias** — the `fileClass:` key on the note (the alias is
-   configurable), whose value is a **wikilink** to the fileClass note, e.g.
+   configurable), whose value is a **wikilink** to the fileClass definition, e.g.
    `fileClass: "[[Book.fileclass]]"`. Accepts a single link or a list of links.
    Links resolve the same way Obsidian resolves any `[[…]]` — folder-independent
    and automatically rewritten when the definition is renamed or moved. A
    fileClass in any scope can be composed with global ones by listing several:
    `fileClass: ["[[Area.fileclass]]", "[[Task.fileclass]]"]`. Plain-text names are
    **not** resolved — use a wikilink.
-2. **Tag match** — a note tag equals a fileClass's `mapWithTag` name or one of
-   its `tagNames`.
+2. **Tag match** — a note tag equals a fileClass's `mapWithTag` name or one of its
+   `tagNames`, **or nests under one**: a note tagged `#author/french` binds to the
+   class mapped on `author`, the way Obsidian's tag search and tag pane treat nested
+   tags — and the way a [generated view](../views/#what-the-managed-view-filters-on)
+   sees them, since Bases' `file.hasTag()` includes children. When both a tag and
+   its parent are mapped, the most specific class comes first and the parent still
+   applies. Frontmatter tags and inline `#tags` both count.
 3. **Path match** — the note lives under one of a fileClass's `filesPaths`.
-4. **Bookmark group match** — the note is in a mapped bookmark group.
+4. **Bookmark group match** — the note is in a mapped bookmark group, or in one nested
+   under it: a note in `Films/Tarkovsky` answers to a class bound to `Films`, the way a
+   nested tag answers to its parent.
 5. **Base-view match** — the note is returned by a fileClass's bound Base view
    (replaces Metadata Menu's Dataview `fileClassQueries`; wired in a later phase).
-6. **Global fileClass** — a fallback applied to notes with no other binding.
-7. **Preset fields** — a last-resort field set.
+6. **Preset fields** — a last-resort field set, for a note none of the above reaches.
+
+### Renaming a field
+
+{{< video "030b" >}}
+
+A field's name is the frontmatter key it writes, so renaming it is a **data migration**: the
+notes that carry the old key would otherwise keep it, with their values, while the new name
+had nothing under it — the field reading as empty everywhere while its data sat one line
+above, under a name nothing knew about.
+
+So the save says what it is about to do. Change a field's name and the button reads **Save and
+migrate…**; it writes the class note, then lists the notes that actually carry the old key and
+asks before touching them. *Leave the notes alone* is a real answer, and so is Escape.
+
+The rename keeps each key **where it stood** — frontmatter order is what the Properties panel
+shows — and descends into groups and into every item of an `ObjectList`. A note where the new
+name already exists is left alone: overwriting a value you can see would be worse than doing
+nothing.
+
+### Picking what a class claims
+
+{{< video "025b" >}}
+
+`Tag names`, `Files paths` and `Bookmark groups`, in a class's options, are **picked from the
+vault**, not typed: the tags it uses (most used first), its folders, and the groups of the
+Bookmarks core plugin. Everything you could write there already exists, and a misspelling
+used to bind nothing and say nothing.
+
+A binding that matches nothing today — a folder renamed, a tag that fell out of use — is
+**kept and still offered**, since dropping it on sight would untype every note it reached.
+When there is nothing to offer at all, the row says so rather than opening an empty picker.
+
+### The global fileClass
+
+Set one and **every note carries it**, whatever else it is: the one template the whole vault
+shares — a `source`, an `added`, whatever your notes all have in common — without declaring
+it in each class. A note with no binding of its own has just that one; a note that names its
+own classes has the baseline *and* them.
+
+It is the **lowest** precedence: on a key the baseline and one of the note's own classes both
+declare, the note's own class wins. Its rows come first in a note's fields, since a baseline
+is what the rest is written on top of.
+
+One exception, and it is not a note you write: the **class folder**. A fileClass declaration
+is not one of the things a vault-wide class is describing.
+
+When two bound classes declare **the same key**, the last one wins — `fileClass: [Book,
+Article]` reads as "a Book, and an Article on top", and the note has exactly one
+`publisher` to write to. The winner brings its own type and options, and the field sits
+with the rest of the class that owns it. A group's child is a different field from a root
+field of the same name (`editions.publisher` beside `publisher`), so those never collide.
 
 The index rebuilds automatically (debounced) when the metadata cache settles or
 a fileClass note changes, and emits a `fileclass:indexed` event.
@@ -118,6 +193,8 @@ A fileClass definition can also be created from a **folder's right-click menu**
 
 ## Creating notes with a template (Templater / Templates)
 
+{{< video "031" >}}
+
 Fileclass is **frontmatter-only**, so it composes cleanly with the core
 **Templates** plugin and **Templater**: keep managing the note *body* with your
 template, and let Fileclass manage the *frontmatter*.
@@ -125,19 +202,21 @@ template, and let Fileclass manage the *frontmatter*.
 The trick to avoid running **Insert missing fields** on every new note is to
 bake the fields into the template **once**:
 
-1. Create a template note and put the binding in its frontmatter (e.g.
-   `fileClass: "[[Book.fileclass]]"`).
-2. Open that template note and run **Fileclass: insert missing fields in current
-   file** once — it writes every field of the fileClass (empty) into the
-   template's frontmatter. (Templater can even pre-fill `fileClass:` dynamically.)
-3. New notes created from the template now start with the binding **and all the
+1. Create a template note and run **Add fileClass** on it — from its right-click
+   menu, from **Fileclass: add a class to this note**, or from the footer of the
+   note-fields modal. A template is a note, so this does there what it does
+   anywhere: it writes the binding (a wikilink, `fileClass: "[[Book.fileclass]]"`)
+   **and** every field the class declares, empty, in one go. (Templater can even
+   work `fileClass:` out dynamically.)
+2. New notes created from the template now start with the binding **and all the
    fields already present** — just fill them in via the note-fields modal or the
    Properties edit buttons. No per-note command needed.
 
 > **When the schema changes:** templates don't re-sync automatically. If you add
 > a field to the fileClass later, re-run **Insert missing fields** on the
-> template so new notes pick it up (existing notes get it the next time you run
-> the command on them).
+> template so new notes pick it up. The notes already written don't move either:
+> run the command on one of them, or
+> [across the whole class at once](../ui/#insert-missing-fields-across-a-class).
 
 ## Editing a fileClass
 
@@ -153,10 +232,14 @@ fileClass**) or its indicator icon, and the fileClass name in the footer of a no
 - **Fields** — add, edit, remove, and reorder field definitions. A field has a
   **name**, a **type**, and type-specific settings; its stable id is generated
   automatically.
-- **Options…** — edit the fileClass options: `icon` (a Lucide name), `extends`
-  (parent fileClass), **Sync to base** (mirror the fields into a `.base`, see
-  [Views](../views/)), `mapWithTag`, `tagNames`, `filesPaths`, `bookmarksGroups`,
-  and `excludes`.
+- **Options…** — edit the fileClass options, in three sections:
+  - **Identity** — **Extends** (its parent, picked from the classes you have, with a
+    button through to that parent's schema), **Excludes** (the inherited fields it
+    drops, picked from the parent's own), and **Icon** (a Lucide name).
+  - **Bound notes** — which notes carry the class beyond those naming it in their
+    frontmatter: **Map with tag**, **Tag names**, **Files paths**, **Bookmark
+    groups**.
+  - **Sync to base** — mirror the fields into a `.base`; see [Views](../views/).
 
 ### Type-specific field settings
 
@@ -168,8 +251,7 @@ When adding or editing a field, its type reveals the relevant settings:
   in place), **from a note** (its non-empty lines), or **from a Base view** (the
   names of the files the view matches).
 - **File / MultiFile / Media / MultiMedia** — a **Base file** and **view**
-  (candidate source), an optional **display column** (the alias), and **embed**
-  (Media).
+  (candidate source) and an optional **display column** (the alias).
 - **Object / ObjectList** — a **Children** button opens the same editor scoped to
   the object's nested fields; nesting can go several levels deep.
 
