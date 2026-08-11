@@ -295,5 +295,203 @@
     "durationSeconds": 220,
     "recordedWith": "0.2.6",
     "privacyStatus": "public"
+  },
+  "025": {
+    "id": "dz0JTL1bb9Y",
+    "url": "https://www.youtube.com/watch?v=dz0JTL1bb9Y",
+    "title": "Fileclass #025 · Two classes on one note",
+    "subject": "Two classes on one note",
+    "scenario": "025_two_classes_on_one_note",
+    "doc": "schema/#binding-a-note-to-fileclasses",
+    "durationSeconds": 185,
+    "recordedWith": "0.2.7",
+    "privacyStatus": "public"
+  },
+  "025b": {
+    "id": "lCiJnJr7IQ8",
+    "url": "https://www.youtube.com/watch?v=lCiJnJr7IQ8",
+    "title": "Fileclass #025b · Notes a class claims by itself",
+    "subject": "Notes a class claims by itself",
+    "scenario": "025b_notes_a_class_claims",
+    "doc": "schema/#picking-what-a-class-claims",
+    "durationSeconds": 195,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "026": {
+    "id": "Rd7VeYbHsrE",
+    "url": "https://www.youtube.com/watch?v=Rd7VeYbHsrE",
+    "title": "Fileclass #026 · Every field of a note, one modal",
+    "subject": "Every field of a note, one modal",
+    "scenario": "026_every_field_one_modal",
+    "doc": "ui/#note-fields-modal",
+    "durationSeconds": 180,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "027": {
+    "id": "dqxv7Wrxer8",
+    "url": "https://www.youtube.com/watch?v=dqxv7Wrxer8",
+    "title": "Fileclass #027 · Right-click your way through it",
+    "subject": "Right-click your way through it",
+    "scenario": "027_right_click_your_way",
+    "doc": "ui/#context-menus",
+    "durationSeconds": 141,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "028": {
+    "id": "ope7-S5hL94",
+    "url": "https://www.youtube.com/watch?v=ope7-S5hL94",
+    "title": "Fileclass #028 · Buttons where you already edit",
+    "subject": "Buttons where you already edit",
+    "scenario": "028_property_panel_buttons",
+    "doc": "ui/#property-editor-buttons",
+    "durationSeconds": 145,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "029": {
+    "id": "zA4KadPjbNg",
+    "url": "https://www.youtube.com/watch?v=zA4KadPjbNg",
+    "title": "Fileclass #029 · Seeing at a glance what's typed",
+    "subject": "Seeing at a glance what's typed",
+    "scenario": "029_seeing_what_is_typed",
+    "doc": "ui/#field-indicator",
+    "durationSeconds": 142,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "030": {
+    "id": "qRtYZ3lCy5c",
+    "url": "https://www.youtube.com/watch?v=qRtYZ3lCy5c",
+    "title": "Fileclass #030 · One field across a whole class",
+    "subject": "One field across a whole class",
+    "scenario": "030_one_field_across_a_class",
+    "doc": "ui/#bulk-edit-set-where",
+    "durationSeconds": 143,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "030b": {
+    "id": "FJAqxSDIXac",
+    "url": "https://www.youtube.com/watch?v=FJAqxSDIXac",
+    "title": "Fileclass #030b · Renaming a field, and every note that carries it",
+    "subject": "Renaming a field, and every note that carries it",
+    "scenario": "030b_renaming_a_field",
+    "doc": "schema/#renaming-a-field",
+    "durationSeconds": 134,
+    "recordedWith": "0.2.9",
+    "privacyStatus": "public"
+  },
+  "030c": {
+    "id": "2V_U74cGmlU",
+    "url": "https://www.youtube.com/watch?v=2V_U74cGmlU",
+    "title": "Fileclass #030c · A class that gained a field",
+    "subject": "A class that gained a field",
+    "scenario": "030c_a_class_that_gained_a_field",
+    "doc": "ui/#insert-missing-fields-across-a-class",
+    "durationSeconds": 120,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "031": {
+    "id": "_uNtXbPQ-0M",
+    "url": "https://www.youtube.com/watch?v=_uNtXbPQ-0M",
+    "title": "Fileclass #031 · New notes that arrive already typed",
+    "subject": "New notes that arrive already typed",
+    "scenario": "031_notes_that_arrive_typed",
+    "doc": "schema/#creating-notes-with-a-template-templater--templates",
+    "durationSeconds": 157,
+    "recordedWith": "0.2.8",
+    "privacyStatus": "public"
+  },
+  "032": {
+    "id": "tGG3ONU4sv8",
+    "url": "https://www.youtube.com/watch?v=tGG3ONU4sv8",
+    "title": "Fileclass #032 · A table for a class, generated",
+    "subject": "A table for a class, generated",
+    "scenario": "032_a_table_for_a_class",
+    "doc": "views/#generating-a-base",
+    "durationSeconds": 156,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "033": {
+    "id": "wnt_FkyFd8I",
+    "url": "https://www.youtube.com/watch?v=wnt_FkyFd8I",
+    "title": "Fileclass #033 · Schema changed? the base follows",
+    "subject": "Schema changed? the base follows",
+    "scenario": "033_the_base_follows",
+    "doc": "views/#keeping-a-base-in-sync",
+    "durationSeconds": 154,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "034": {
+    "id": "EQTOTgjfuKs",
+    "url": "https://www.youtube.com/watch?v=EQTOTgjfuKs",
+    "title": "Fileclass #034 · Editing right in the table",
+    "subject": "Editing right in the table",
+    "scenario": "034_editing_in_the_table",
+    "doc": "views/#editable-table-view",
+    "durationSeconds": 164,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "035": {
+    "id": "4qNflzfclNI",
+    "url": "https://www.youtube.com/watch?v=4qNflzfclNI",
+    "title": "Fileclass #035 · What's missing, in a column",
+    "subject": "What's missing, in a column",
+    "scenario": "035_whats_missing_in_a_column",
+    "doc": "views/#validation-columns",
+    "durationSeconds": 150,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "036": {
+    "id": "6I9YZNaoqnc",
+    "url": "https://www.youtube.com/watch?v=6I9YZNaoqnc",
+    "title": "Fileclass #036 · A base inside a note",
+    "subject": "A base inside a note",
+    "scenario": "036_a_base_inside_a_note",
+    "doc": "views/#embedding",
+    "durationSeconds": 144,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "037": {
+    "id": "xeccqChw1kA",
+    "url": "https://www.youtube.com/watch?v=xeccqChw1kA",
+    "title": "Fileclass #037 · A field that follows your canvas",
+    "subject": "A field that follows your canvas",
+    "scenario": "037_a_field_that_follows_your_canvas",
+    "doc": "fields/#canvas-fields-canvas--canvasgroup--canvasgrouplink",
+    "durationSeconds": 203,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "038": {
+    "id": "smt6cu8PLnE",
+    "url": "https://www.youtube.com/watch?v=smt6cu8PLnE",
+    "title": "Fileclass #038 · Groups on a canvas as data",
+    "subject": "Groups on a canvas as data",
+    "scenario": "038_groups_on_a_canvas",
+    "doc": "fields/#canvas-fields-canvas--canvasgroup--canvasgrouplink",
+    "durationSeconds": 216,
+    "recordedWith": "0.2.10",
+    "privacyStatus": "public"
+  },
+  "039": {
+    "id": "zp6jflaZwj0",
+    "url": "https://www.youtube.com/watch?v=zp6jflaZwj0",
+    "title": "Fileclass #039 · The model your classes make",
+    "subject": "The model your classes make",
+    "scenario": "039_the_model_your_classes_make",
+    "doc": "views/#the-schema-canvas",
+    "durationSeconds": 155,
+    "recordedWith": "0.2.11",
+    "privacyStatus": "public"
   }
 }

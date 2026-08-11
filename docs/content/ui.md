@@ -9,6 +9,8 @@ the UI surfaces; on-name indicators come later).
 
 ## Note-fields modal
 
+{{< video "026" >}}
+
 The **note-fields modal** is the hub for a note's fields. It lists every root
 field of the note's fileClass(es) — each row is compact, with the field's **type
 shown as a leading icon** (hover it for the type name) and its current value.
@@ -47,6 +49,11 @@ note's indicator icon and the fileClass's right-click menu open, stacked over th
 note so closing it brings you back. On **hover**, a name marks the rows of the fields
 that fileClass declares with a vertical bar, so you can see which fileClass owns
 which field (inherited fields point at the ancestor that declares them).
+
+When the note does **not** name the class itself, the crumb says where it came from —
+`Media › Book (from /Reading list)`, `(from #album)`, `(from *Film club)`. Three of the four
+binding routes leave nothing in the file, so without this a note can carry a class with an
+empty frontmatter and no way to find out which option, on which class, claimed it.
 
 It works **both ways**: hovering a field's row marks, in the footer, the class that
 declares it — the same accent bar, laid under the name. So "what does this class give
@@ -107,17 +114,22 @@ modals answer the chord.
 
 ## Context menus
 
+{{< video "027" >}}
+
 When **Context menu entries** is enabled (Settings → Fileclass), right-clicking a
 Markdown file — in the file explorer, on a tab, or in the editor — adds:
 
 - **Manage note fields** → the modal above.
 - **Update a field** → pick one field and edit it.
 - **Insert missing fields**.
+- **Reorder properties** — only when the note's keys are out of its class's order.
 - **Add fileClass** — which also inserts that class's fields, unless you turn
   [**Insert fields when adding a class**](../settings/#behavior) off.
 - **Open *&lt;class&gt;* schema** — one entry per fileClass that applies to the note,
-  named. This is the only route for a class bound by **tag, path, bookmark or Base
-  view**: those leave no value in the frontmatter to click.
+  named. This matters for a class bound by **tag, path, bookmark or Base view**:
+  those leave no value in the frontmatter to click, so the menu — and the breadcrumb
+  at the bottom of the [note-fields modal](#note-fields-modal) — are how you reach
+  the class at all.
 
 On a **fileClass note**, the menu instead offers schema actions plus **Bulk edit
 a field of this fileClass** (see below).
@@ -128,7 +140,32 @@ naturally looks for it.
 
 All actions write to frontmatter only, one `processFrontMatter` write each.
 
+## Insert missing fields across a class
+
+{{< video "030c" >}}
+
+*Insert missing fields* is a per-note command, which is what you want on the note in front of
+you and useless the day a class gains a field: every note written before it keeps a gap, and
+closing it meant opening each one. [Bulk edit](#bulk-edit-set-where) could set a value
+everywhere but never add the key.
+
+**Fileclass: insert missing fields across a class** — also on a fileClass note's right-click
+menu — counts first: how many notes are missing how many fields, then the list, note by note,
+with what each one lacks. *Not now* leaves everything as it is; confirming writes once and
+reports a single total rather than one notice per note.
+
+It asks the index, not the frontmatter, so a note **claimed by a folder, a tag or a bookmark
+group** is included even though no `fileClass` line names it — those are precisely the ones
+nobody remembers. Templates are included too, and should be: a template is a note of the class
+like any other (see [creating notes with a
+template](../schema/#creating-notes-with-a-template-templater--templates)).
+
+The keys arrive **empty**, as they do note by note: a key with nothing in it, which is exactly
+what a [required field](../fields/#required-fields) then flags.
+
 ## Bulk edit (set-where)
+
+{{< video "030" >}}
 
 **Fileclass: bulk edit a field** (command, or the fileClass note's right-click
 menu) sets one field across many notes at once — the in-app counterpart of the
@@ -167,10 +204,15 @@ stops growing after a few levels, and dragging a modal replaces it.
 
 Position is per-modal and not remembered: the next one you open is centred again.
 
-**Any modal of a stack can be moved**, not only the top one. Obsidian gives each modal a
-full-window backdrop, so an invisible one still swallowed every click aimed at a modal
-underneath; those upper backdrops are click-through now, and so are their containers, with
-each modal itself put back in the way.
+**Only the topmost modal of a stack answers the mouse** — the ones below are dimmed and
+inert, which is what the keyboard already did: Obsidian traps focus in the last modal
+opened, and <kbd>Escape</kbd> closes that one. These modals hold drafts, so reaching into
+the one underneath while a child is open would let the child's Save write over a draft you
+had since changed.
+
+**They can still be moved**, by their title: rearranging what you can see is the point of
+the setting, and moving a modal changes nothing in it. A background window you may drag but
+not act inside.
 
 Stacked modals also **dim the app once**, not once per modal: three of them used to darken
 the window three times over and wash out the ones below.
@@ -219,6 +261,8 @@ Moving down keeps the *action*, not the column: a group field carries an extra
 
 ## Field indicator
 
+{{< video "029" >}}
+
 A small clickable **icon** appears next to a note's name whenever a fileClass
 applies to it; clicking it opens the note-fields modal above. On a **fileClass
 note** itself (in the tab header or file explorer), the icon instead opens the
@@ -238,12 +282,21 @@ keep working.
 
 ## Property editor buttons
 
+{{< video "028" >}}
+
 In Obsidian's native **Properties** editor, each row whose key matches an
 **editable field** of the note's fileClass gets a small **button between the key
 and the value**, carrying the field's type icon. Clicking it performs [that type's
 gesture](#one-gesture-per-field-type) — a `Cycle` advances, a `Boolean` flips,
 everything else opens the type-appropriate input with its validation, instead of
-Obsidian's untyped value cell. **Alt-click** always opens the input. Auto-
+Obsidian's untyped value cell. **Alt-click** always opens the input.
+
+**Editing the field rather than its value**: **right-click** any of these buttons and
+that field's own definition opens — its type, its options — from the panel where you
+noticed the problem. Not Alt: on this button Alt already opens a type's picker, and a
+modifier that means two things depending on the type is worse than one that means one.
+In the [note-fields modal](#note-fields-modal) the type icon and the action button are
+two separate elements, so there Alt over the icon is what opens the definition. Auto-
 maintained fields (Canvas family) and computed types get no button. Toggle it
 under **Settings → Fileclass → Property editor buttons**.
 
@@ -279,7 +332,36 @@ to insert" — which, since binding a class inserts its fields automatically
 (*Insert fields when adding a class*, on by default), is what it would show most
 of the time.
 
-Both buttons sit in the properties section, so they follow Obsidian's own rule
+A third, **Reorder properties**, appears only when a note's keys are out of the
+order its class declares.
+
+### On a fileClass note
+
+Its **`fields` row** reads *N fields* behind a wrench that opens the schema. A
+class's fields are a list of objects, which Obsidian has no editor for, so the
+panel printed the raw JSON in the warning colour it keeps for values nobody can
+interpret — on the one note where that value is the subject. The count is what
+the class declares at its top level; the tooltip adds how many live inside
+objects.
+
+A class note gets the actions that act on the **class**, not on the note — and
+not *Add a class*, which there would bind a class to a class:
+
+- **+ Add a field** — opens the schema editor with its *Add field* dialog
+  already up, so the new field lands in a list you are looking at.
+- **Options** — what the class [extends](../schema/#extending-a-fileclass), what
+  it excludes, and the [notes it claims](../schema/#binding-notes-to-a-fileclass).
+- **Create a base** / **Modify the base** — the
+  [generator](../views/#generating-a-base), prefilled. It reads **Sync the base**,
+  in the accent colour, while the class and its table disagree — a field added,
+  renamed or moved since the table was written — and clicking it then syncs
+  straight away instead of reopening the generator. Nothing polls: the check runs
+  when the class's shape changes under your eyes.
+- **Open the base** — only once the class has one, and it goes straight there.
+- **Bulk edit a field** — [set one field](#bulk-edit-set-where) across the notes
+  that carry the class.
+
+Both sets sit in the properties section, so they follow Obsidian's own rule
 for showing it: a note with **no frontmatter at all** displays no properties
 section, and therefore no buttons — use the command palette, the right-click menu
 or the [field indicator](#field-indicator) to bind the first class. Toggle the

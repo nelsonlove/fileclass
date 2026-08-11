@@ -116,3 +116,75 @@ other. Captions are English; YouTube translates them into your language.
 ## One parent class, three children
 
 {{< video "024" >}}
+
+## Two classes on one note
+
+{{< video "025" >}}
+
+## Notes a class claims by itself
+
+{{< video "025b" >}}
+
+## Every field of a note, one modal
+
+{{< video "026" >}}
+
+## Right-click your way through it
+
+{{< video "027" >}}
+
+## Buttons where you already edit
+
+{{< video "028" >}}
+
+## Seeing at a glance what's typed
+
+{{< video "029" >}}
+
+## One field across a whole class
+
+{{< video "030" >}}
+
+## Renaming a field, and every note that carries it
+
+{{< video "030b" >}}
+
+## A class that gained a field
+
+{{< video "030c" >}}
+
+## New notes that arrive already typed
+
+{{< video "031" >}}
+
+## A table for a class, generated
+
+{{< video "032" >}}
+
+## Schema changed? the base follows
+
+{{< video "033" >}}
+
+## Editing right in the table
+
+{{< video "034" >}}
+
+## What's missing, in a column
+
+{{< video "035" >}}
+
+## A base inside a note
+
+{{< video "036" >}}
+
+## A field that follows your canvas
+
+{{< video "037" >}}
+
+## Groups on a canvas as data
+
+{{< video "038" >}}
+
+## The model your classes make
+
+{{< video "039" >}}

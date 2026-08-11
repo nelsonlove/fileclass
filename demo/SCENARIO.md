@@ -228,6 +228,30 @@ digit. Versions and dates are left alone.
   and navigation is the one thing no viewer needs to watch. A leaf on a base reads
   `{"type":"bases","state":{"file":"Books.base","viewName":"No author yet"}}` — measured, and
   the `viewName` matters: without it the base opens on its first view.
+- **The staged vault gets `shorterModal` and movable modals.** `stage.mjs` writes it into `data.json` for every
+  take: the plugin's modals lose 90px and pin themselves 45px from the top, so a note with
+  sixteen fields stops reaching into the subtitles burned along the bottom of the frame. It is
+  deliberately absent from the settings pane — nobody but a screen recorder wants it — and a
+  scenario can turn it off by putting `shorterModal: false` in its own `settings:` block.
+  `enableDraggableModals` is on for the same reason: a take should be able to pull a modal
+  aside when it covers what the step is about, rather than closing and reopening it. The plugin
+  ships that setting off — it is experimental — so the takes turn it on here, and a scenario
+  can say `enableDraggableModals: false` if a step needs the default behaviour.
+
+- **A caption gets out of the way of a menu by itself.** Obsidian's menus open where the
+  pointer is and grow downward, so a right-click in the lower half of the window lands behind
+  the caption. The overlay watches for one and lifts the caption to the top while it is open,
+  dropping back when it closes — and only when the top is free, so a menu opened near the top
+  is not handed the same problem upside down. ⌘⌃⌥⇧U still lifts it by hand for everything else;
+  a menu closes on the next click, which is far too fast to reach for a chord.
+
+- **Give every class its own icon.** A vault whose classes all wear the plugin's default icon
+  makes the explorer a wall of identical marks, and a viewer cannot tell a book from a film
+  without reading. One `icon:` per class in the fixture — `book`, `disc-3`, `film`,
+  `book-open`, `user-round`, `layers`, `calendar`, `newspaper`, `library` — and the binding of
+  a note becomes legible in a frame that was showing it anyway. Check what actually paints
+  rather than trusting the name: a Lucide id that does not exist falls back silently.
+
 - **Only show what earlier takes have introduced.** The series is cumulative, so a surface
   that has its own take later must not carry a step here — `fileclass-table` and its
   validation columns belong to arc 7, so take 023 makes its point with a plain Bases view and

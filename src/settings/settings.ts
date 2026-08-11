@@ -4,6 +4,7 @@
  * loadData/saveData.
  */
 import { DateFormatDefaults } from "../fields/dateFormats";
+import { UnknownKeysPosition } from "../schema/reorder";
 
 
 export interface FileclassSettings {
@@ -33,8 +34,36 @@ export interface FileclassSettings {
 	/** Insert a class's missing fields as soon as the class is bound to a note. */
 	insertFieldsOnBind: boolean;
 	/**
-	 * Let a modal be dragged by its title, cascade a stack of them, dim once and make
-	 * every modal of a stack clickable. Experimental and desktop-only: it works by
+	 * Rewrite a note's frontmatter in its class's field order after inserting missing fields
+	 * (#104). Off by default: it rewrites the whole block, so it touches lines the user did
+	 * not ask to edit and it shows up in a git diff.
+	 */
+	reorderOnInsert: boolean;
+	/**
+	 * Where the schema canvas lives (#149). Blank = `<class folder>/Schema.canvas`.
+	 *
+	 * A setting rather than a convention because the file is arranged by hand: someone who
+	 * moves it out of the class folder should not have a second one generated behind them.
+	 */
+	schemaCanvasPath: string;
+	/** Where keys no class declares go when the frontmatter is reordered. */
+	unknownKeysPosition: UnknownKeysPosition;
+	/**
+	 * Undocumented, and deliberately absent from the settings tab: shortens every modal of
+	 * this plugin — enough to clear a three-line subtitle — and pins it 45px from the top.
+	 *
+	 * It exists for **recording**. The demo takes burn their subtitles into the bottom of the
+	 * frame, and a tall modal — a note with sixteen fields — reaches down into them. Set it by
+	 * hand in `data.json` (`"shorterModal": true`); the demo tooling sets it for every staged
+	 * vault. A setting nobody but a screen recorder wants does not belong in a settings pane.
+	 */
+	shorterModal?: boolean;
+	/**
+	 * Let a modal be dragged by its title, cascade a stack of them, and dim the app once
+	 * rather than once per modal. A stack stays **LIFO for the pointer** as it already is
+	 * for the keyboard (#118): only the topmost modal answers a click, the ones below are
+	 * dimmed and inert, and they can still be dragged by their title — a background window
+	 * you may move but not act inside. Experimental and desktop-only: it works by
 	 * neutralising Obsidian's own full-window modal backdrops, which is a shared surface —
 	 * hence off by default.
 	 */
@@ -71,6 +100,10 @@ export const DEFAULT_SETTINGS: FileclassSettings = {
 	enableValidationColumns: true,
 	enableContextMenu: true,
 	insertFieldsOnBind: true,
+	reorderOnInsert: false,
+	schemaCanvasPath: "",
+	unknownKeysPosition: "top",
+	shorterModal: false,
 	enableDraggableModals: false,
 	enablePropertyEditButtons: true,
 	enablePropertyActionButtons: true,
