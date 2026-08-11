@@ -92,6 +92,71 @@ tests (§14) must catch it.
 - Context file: filters/formulas using `this.file` resolve against
   `controller.currentFile` — set it before `buildBasesContext` for
   embed-context views.
+- **In an *embedded* base, `this.file` is the note holding the embed** (measured on
+  1.13.2, August 2026): one `.base` embedded in `Host A.md` and `Host B.md` returns
+  Host A's rows in the first and Host B's in the second. This is what makes **one**
+  reverse-relation view serve every note of a class (#154) instead of one view per
+  note.
+- **Matching "the note whose link field points at the host"** — verified over CDP
+  against three cases: a plain link, an **aliased** link (`[[A1|Melville]]`), and two
+  notes sharing a basename in different folders.
+  - a `File` field: `author == this.file.asLink()` works, and so do
+    `author.asFile() == this.file`, `author.asFile().path == this.file.path` and
+    `author.linksTo(this.file)`. All four pass the alias and tell the namesakes apart —
+    Bases resolves links on both sides, whether the stored link is a basename or a full
+    path;
+  - a `MultiFile` field: `contributors.contains(this.file.asLink())` works, as does
+    `containsAny`. **`linksTo` and `==` both return nothing on a list.**
+  - **`author.contains(this.file.name)` is wrong** and looks right: it matched a second
+    note whose link pointed at a *different* file with the same basename. Never compare
+    basenames.
+  - So the cardinality needs **two expressions**, not one: there is no form that covers
+    both (`containsAny` on a scalar `File` returned nothing).
+- **What the host asks of a registered view** (traced property by property on the
+  object returned by the factory, August 2026):
+  - in a **leaf**: `load` → `type` → `focus`, then it *sets* `allProperties` and
+    `data` and calls `onDataUpdated()`;
+  - in an **embed** (`![[x.base]]` or a ```` ```base ```` block): `load` → `type`,
+    and then nothing until the container is shown. `onResize` is called later.
+  So `view.type` **is read** (the native views carry it as a field) and a custom
+  view should expose the view id.
+- **A custom view must fill its container immediately, or an embed deadlocks.**
+  Obsidian ships
+  `.workspace-leaf-content[data-type="markdown"] .block-language-base .bases-view:empty,
+  … .bases-embed .bases-view:empty { display: none }`, and `runQuery` suspends
+  until `viewContainerEl.isShown()` (it awaits `onNodeInserted` otherwise, read
+  from the minified source). A view that draws nothing before its data arrives is
+  therefore hidden, never shown, never fed: measured as "0 results" with
+  `display: none` and `isShown() === false` on our container, against `block` on
+  the native `table` in the same block. The native views escape it by building
+  their skeleton (thead, scroll element) in the constructor. One child element is
+  enough — `fileclassTableView` writes a `.fileclass-table-pending` div on `load`
+  and whenever it has nothing to render.
+- **The toolbar is a sibling of the view container**, not a parent: `.bases-header
+  > .bases-toolbar` beside `.bases-view`, both under `.view-content` in a leaf and
+  under `.bases-embed` / `.block-language-base` in an embed. Anything injected into
+  a toolbar must be scoped to the *closest* of those wrappers — a note holding two
+  embedded bases has two toolbars.
+- **A rendered table can always name itself**, from one of two places:
+  - a leaf states it: `leaf.getViewState().state === {file: "Books.base", viewName:
+    "Book"}`;
+  - an **embed** states it on the element holding it: `![[Books.base#Book]]` leaves
+    `src="Books.base#Book"` (and `alt="Books.base > Book"`) on the `.internal-embed`,
+    reachable with `closest("[src]")`. `src` is a **link**, so resolve it with
+    `getFirstLinkpathDest`; with no `#`, the rendered view is the one the toolbar
+    names.
+  That is how a table knows which fileClass declared it (`baseFile`/`baseView`). An
+  inline ```` ```base ```` block has no file and no `src`: nothing declares it, so a
+  view there falls back to the classes of its rows.
+- **The registry exposes views only.** `instance.registrations` holds view types
+  (`table`, `cards`, `list`, + ours) and the instance offers `registerView` /
+  `deregisterView` / `getViewFactory` — there is **no** hook to contribute a
+  computed property or a function, which is why validity cannot become something
+  Bases' own Sort/Filter menus see (#142).
+- **`property == "X"` does not match a list.** A note carrying several classes
+  stores `fileClass` as a YAML list, and equality never matches it (measured: 8
+  rows instead of 9). Generated filters use `property.containsAny("X")`, which
+  matches the scalar case too.
 
 ### 3.2 processFrontMatter (write path)
 Verified: **preserves order** of top-level keys, nested object keys, ObjectList
@@ -378,7 +443,63 @@ canvas file tracking (comes with the planned Canvas engine, §9.1).
   migration). Sync/regenerate never pushes a per-view scope back to base-wide.
   Anchored by a unit test (two fileClasses, two views survive a re-sync) and the
   e2e `two-fileclasses.base` fixture.
-- Embeds: users embed bases natively (```` ```base ````); no custom code block.
+- Embeds: users embed bases natively — `![[Some.base]]` or a ```` ```base ````
+  block; no custom code block of ours. An embedded `fileclass-table` is the same
+  view: editable cells, validation columns, and the *Manage `<FileClass>`* wrench,
+  each scoped to its own embed. See §3.1 for the two rules an embed enforces that a
+  leaf does not (fill the container, expose `type`).
+- **The class ↔ view link** (`baseFile`/`baseView` on the class note) is what names
+  the table: `Books.base › Book` is Book's view even when a row carries several
+  classes. It is also a uniqueness constraint — two classes mirroring into one view
+  would overwrite each other's `order:` on every sync, so the generator and the
+  options editor refuse it, naming the class that claimed it first
+  (`fileClassClaimingView`).
+- **A group cell shows the field's own display** (#156): `Object`/`ObjectList` cells
+  render through `describeField`, not Bases' `toString()` — same string as the
+  note-fields modal, the property buttons and the API, so the value displayed and the
+  value edited agree. Every other type keeps Bases' value, which knows about formulas,
+  file properties and link rendering. Deps are built once per render, per note.
+- **The `valid` column filters on itself** (#142): its header cycles all → failures
+  → clean and carries the failure count. Session-only state, never written to the
+  base — and the only route available, since the registry takes no computed
+  properties (§3.1).
+
+### 11.1 Reverse relations (#154, `reverseView.ts` / `reverseSync.ts`)
+
+The relation a bound link field declares, read from the other end: from an author,
+the books whose `author` points at it. Fileclass **authors a view and embeds it**;
+Bases evaluates the filter and nothing is stored (§9 stands).
+
+- **One view per relation, not per note.** `this.file` in an embedded base is the
+  note holding the embed (measured, §3.1), so `Book by author` answers for every
+  author. Reuse is recognition by **name**, and a reused view is never touched —
+  columns, sort and filters included, the same restraint `mirrorBaseView` shows.
+- **The reader picks the base**, once: `pickReverseBase` offers the class's own base
+  (else `<basesFolder><Class>.base`) and takes any path. So the view's home is *not*
+  derivable from the class, and `locateReverseView` searches every `.base` in the
+  vault by view name — otherwise the second note would create a second copy
+  elsewhere and one view would stop serving every note. Asked only on the run that
+  creates it; asking again would invite exactly that duplicate.
+- **The filter** is the class's own scope (`fileClassViewFilter`, so folder- and
+  tag-bound notes stay in) plus one clause: `author == this.file.asLink()`, or
+  `contributors.contains(this.file.asLink())` for a list. Two expressions, because
+  no single one covers both cardinalities (§3.1). **Never** compare basenames.
+- **Columns** come from the class's managed view — read from the **class's** base,
+  not from the file being written, so a view sent to a dashboard base still looks
+  like the table the reader curated — else the full field mirror; minus the pointing
+  field, which holds the host on every row of a reverse table.
+- **Discovery** asks each source view whether the host is among its candidates,
+  memoised per `(baseFile, viewName)` in `QueryCache`. It runs **on invocation
+  only** (§6: each pass is O(vault)). Root fields with a base binding only: an
+  unbound link field would make every class a candidate from every note, and a
+  `Select` holding a name is not a relation.
+- **Writing into a note's body** is the plugin's one write outside
+  `processFrontMatter`: at the cursor when the editor is open in source mode, else
+  appended. An existing embed is jumped to, never duplicated and never rewritten.
+- Fixture `demo/901_reverse_relation` re-verifies the whole chain after an Obsidian
+  upgrade: `demo/reverse-probe.mjs` (plain link, aliased link, namesake in another
+  folder, reuse by the second author) and `demo/reverse-elsewhere.mjs` (the view sent
+  to a base of the reader's choosing, then found there by the next note).
 
 ## 12. Public API + CLI/TUI
 
@@ -637,6 +758,15 @@ dispatcher (`promptFieldValue`/`updateField`, one `processFrontMatter` write, D5
   verify at build time; otherwise the link indicator (19.4) is the entry point.
 
 ### 19.4 Field indicator (`src/ui/indicator/`) — the fragile boundary
+
+**Surfaces that re-render need watching, not decorating once.** Reading view goes through the
+markdown post-processor; Live Preview is a CodeMirror extension; the backlinks pane, Bases views
+and **canvas** leaves are plain DOM that Obsidian rebuilds on its own schedule — a canvas every
+time its file is written. Those are handled by `watch(viewType)`: a MutationObserver per leaf,
+debounced, re-decorating what came back. A surface decorated once and not watched loses its icons
+at the first re-render, silently (measured on the schema canvas: three icons, then none after a
+resync).
+
 - A small clickable icon injected next to a file's name that opens 19.1 for that
   file. **Default: icon only** (no values shown) — the lightest, most robust
   option; showing configured field values beside it (MDM's "extra attributes")

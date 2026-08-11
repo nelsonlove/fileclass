@@ -26,7 +26,12 @@ export interface FileBinding {
 export interface FileClassRegistry {
 	has(name: string): boolean;
 	fieldsOf(name: string): Field[];
-	/** tag → fileClass name (from `mapWithTag` / `tagNames`). */
+	/**
+	 * tag → fileClass name (from `mapWithTag` / `tagNames`), **keyed in lower case**: a tag's
+	 * case is not part of its identity anywhere in Obsidian, and the vault's own registry is
+	 * folded. Two classes mapping tags that differ only by case therefore collide, and the
+	 * last one indexed wins — which is the same answer Obsidian's tag pane gives.
+	 */
 	tagBindings: ReadonlyMap<string, string>;
 	/** folder-path prefix → fileClass name (from `filesPaths`). */
 	pathBindings: ReadonlyMap<string, string>;
@@ -38,12 +43,46 @@ export interface FileClassRegistry {
 
 export type BindingSource = "fileClass" | "global" | "preset" | "none";
 
+/**
+ * Why a class applies to a note. Four of the five leave no trace in the file, which is the
+ * whole reason to carry this: a note in a bound folder looks untyped in its own frontmatter,
+ * and until you are told *where* its class comes from, the only way to find out is to open
+ * every class and read its options.
+ */
+export type BindingOrigin =
+	| { kind: "frontmatter" }
+	| { kind: "tag"; value: string }
+	| { kind: "path"; value: string }
+	| { kind: "bookmark"; value: string }
+	| { kind: "baseView"; value: string }
+	| { kind: "global" };
+
+/** `#album`, `/Reading list`, `*Film club` — how an origin reads in one glance. */
+export function describeOrigin(origin: BindingOrigin): string {
+	switch (origin.kind) {
+		case "tag":
+			return `#${origin.value}`;
+		case "path":
+			return `/${origin.value}`;
+		case "bookmark":
+			return `*${origin.value}`;
+		case "baseView":
+			return `${origin.value}`;
+		case "global":
+			return "vault-wide";
+		default:
+			return "";
+	}
+}
+
 export interface Resolution {
 	/** Ordered, de-duplicated bound fileClass names (empty for global/preset). */
 	fileClassNames: string[];
-	/** Fields merged in priority order, de-duplicated by id. */
+	/** Fields merged in binding order; on the same key, the last bound class wins. */
 	fields: Field[];
 	source: BindingSource;
+	/** Per bound class, why it applies. Same keys as `fileClassNames`. */
+	origins: Map<string, BindingOrigin>;
 }
 
 /**
@@ -60,62 +99,123 @@ export function tagAncestry(tag: string): string[] {
 	return parts.map((_, i) => parts.slice(0, parts.length - i).join("/"));
 }
 
-/** Bound fileClass names in priority order, keeping only those in the registry. */
-function collectBoundNames(binding: FileBinding, registry: FileClassRegistry): string[] {
+/**
+ * Bound fileClass names in priority order, keeping only those in the registry, each with the
+ * reason it is there. A class claimed twice — a tag *and* a folder — keeps the first reason,
+ * which is also the higher-priority one.
+ */
+function collectBoundNames(
+	binding: FileBinding,
+	registry: FileClassRegistry
+): { names: string[]; origins: Map<string, BindingOrigin> } {
 	const names: string[] = [];
-	const add = (name: string | undefined) => {
-		if (name && registry.has(name) && !names.includes(name)) names.push(name);
+	const origins = new Map<string, BindingOrigin>();
+	const add = (name: string | undefined, origin: BindingOrigin) => {
+		if (!name || !registry.has(name) || names.includes(name)) return;
+		names.push(name);
+		origins.set(name, origin);
 	};
 
 	// 1. inner (frontmatter alias)
-	binding.innerNames.forEach(add);
-	// 2. tag match, a nested tag counting as its ancestors
+	binding.innerNames.forEach((name) => add(name, { kind: "frontmatter" }));
+	// 2. tag match, a nested tag counting as its ancestors, **case-insensitively**.
+	//
+	// Obsidian treats `#Album` and `#album` as one tag everywhere it matters — its search, its
+	// tag pane, and `metadataCache.getTags()`, which reports the whole vault folded to lower
+	// case. Matching exactly meant a class named `Album` with `Map with tag` on claimed the
+	// notes tagged `#Album` and missed every `#album`, while the tag picker (which reads that
+	// same folded registry) could only ever offer the lower-case spelling. Measured, both ways.
 	for (const tag of binding.tags) {
-		for (const candidate of tagAncestry(tag)) add(registry.tagBindings.get(candidate));
+		for (const candidate of tagAncestry(tag.toLowerCase())) {
+			add(registry.tagBindings.get(candidate), { kind: "tag", value: candidate });
+		}
 	}
 	// 3. path match (folder path is under a mapped prefix)
 	for (const [prefix, name] of registry.pathBindings) {
-		if (binding.folderPath === prefix || binding.folderPath.startsWith(prefix)) add(name);
-	}
-	// 4. bookmark group match
-	(binding.bookmarkGroups ?? []).forEach((group) => add(registry.bookmarkBindings.get(group)));
-	// 5. base-view match (pre-resolved upstream)
-	(binding.baseViewNames ?? []).forEach(add);
-
-	return names;
-}
-
-/** Concatenates the fields of each bound class, de-duplicating by field id. */
-function mergeFields(names: string[], registry: FileClassRegistry): Field[] {
-	const fields: Field[] = [];
-	const seen = new Set<string>();
-	for (const name of names) {
-		for (const field of registry.fieldsOf(name)) {
-			if (seen.has(field.id)) continue;
-			fields.push(field);
-			seen.add(field.id);
+		if (binding.folderPath === prefix || binding.folderPath.startsWith(prefix)) {
+			add(name, { kind: "path", value: prefix });
 		}
 	}
-	return fields;
+	// 4. bookmark group match
+	for (const group of binding.bookmarkGroups ?? []) {
+		add(registry.bookmarkBindings.get(group), { kind: "bookmark", value: group });
+	}
+	// 5. base-view match (pre-resolved upstream)
+	for (const name of binding.baseViewNames ?? []) add(name, { kind: "baseView", value: name });
+
+	return { names, origins };
 }
 
 /**
- * Resolves a note's binding. Falls back to the global fileClass, then to preset
- * fields, then to nothing — exactly as Metadata Menu's `getFilesFields`.
+ * What makes two declarations the same field on a note: its name at its level. Identical to
+ * the key inheritance uses — a group's children are told apart by `path`, never by name
+ * alone, or `editions.publisher` would collide with a plain `publisher`.
+ */
+function fieldKey(field: Field): string {
+	// NUL as the separator, as in inheritance.ts: no path or name can hold one, so a field
+	// called "next interval" can never blur into the path in front of it.
+	return `${field.path}\u0000${field.name}`;
+}
+
+/**
+ * The fields of every bound class, merged into one list.
+ *
+ * When two bound classes declare the same key, **the last one wins** — `fileClass: [Book,
+ * Article]` reads as "a Book, and an Article on top", and the frontmatter has exactly one
+ * `publisher` to write to. Before this, both survived (they were de-duplicated by *id*, and
+ * two classes declare their own): a note showed two rows of the same name, reading the same
+ * value through two different types, one of which would refuse it.
+ *
+ * The winner takes the loser's place in the list as well as its meaning, so the key sits with
+ * the rest of the class that owns it and the row's stated owner matches where it appears.
+ */
+function mergeFields(names: string[], registry: FileClassRegistry): Field[] {
+	const byKey = new Map<string, Field>();
+	for (const name of names) {
+		for (const field of registry.fieldsOf(name)) {
+			const key = fieldKey(field);
+			byKey.delete(key);
+			byKey.set(key, field);
+		}
+	}
+	return [...byKey.values()];
+}
+
+/**
+ * Resolves a note's binding.
+ *
+ * The global fileClass is a **baseline, not a fallback**: it applies to every note, whatever
+ * else that note is — the one template the whole vault carries. It was a last resort before,
+ * reaching only notes with no binding at all, which meant the fields you wanted everywhere
+ * were exactly the fields your typed notes never got.
+ *
+ * It comes **first** in the list, and the list is the precedence order — last declaration
+ * wins — so a note's own classes override the baseline on any key they both declare, the same
+ * rule that governs two classes on one note and a child against its parent. `source` still
+ * says `global` when the baseline is all a note has, since that distinction is what tells a
+ * note that names its class from one that inherited the vault's.
+ *
+ * Preset fields remain the last resort, for a vault with neither.
  */
 export function resolveBinding(binding: FileBinding, registry: FileClassRegistry): Resolution {
-	const names = collectBoundNames(binding, registry);
-	if (names.length) {
-		return { fileClassNames: names, fields: mergeFields(names, registry), source: "fileClass" };
-	}
+	const { names: own, origins } = collectBoundNames(binding, registry);
 	const global = registry.globalFileClass;
-	if (global && registry.has(global)) {
-		return { fileClassNames: [global], fields: registry.fieldsOf(global), source: "global" };
+	const withGlobal =
+		global && registry.has(global) && !own.includes(global) ? [global, ...own] : own;
+	if (withGlobal.length > own.length && global) origins.set(global, { kind: "global" });
+
+	if (withGlobal.length) {
+		return {
+			fileClassNames: withGlobal,
+			fields: mergeFields(withGlobal, registry),
+			source: own.length ? "fileClass" : "global",
+			origins,
+		};
 	}
 	if (registry.presetFields?.length) {
-		return { fileClassNames: [], fields: registry.presetFields, source: "preset" };
+		return { fileClassNames: [], fields: registry.presetFields, source: "preset", origins };
 	}
-	return { fileClassNames: [], fields: [], source: "none" };
+	return { fileClassNames: [], fields: [], source: "none", origins };
 }
 
 /**

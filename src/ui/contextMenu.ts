@@ -11,14 +11,19 @@
  * minimal `unknown` cast (SubmenuItem) and kept co-located with the menu code
  * rather than in basesAdapter (Bases-specific, runtime-proven, not to be touched).
  */
-import { Component, Menu, TFile, TFolder } from "obsidian";
+import { Component, Menu, Notice, TFile, TFolder } from "obsidian";
 
 import type FileclassPlugin from "../../main";
+import { bulkInsertMissingFields } from "../commands/bulkInsertMissing";
 import { createFileClassInFolder } from "../commands/createFileClass";
 import { insertMissingFields } from "../commands/insertMissingFields";
 import { pickAndUpdateField } from "../fields/fieldActions";
+import { reorderFrontmatter } from "../io/reorderFrontmatter";
+import { reorderPlan } from "../schema/reorder";
 import { pickAndCreateBase } from "../views/baseFileGenerator";
 import { fileClassBaseFile, openFileClassBase } from "../views/baseSync";
+import { insertReverseRelation, vaultHasReverseRelations } from "../views/reverseSync";
+import { syncSchemaCanvas } from "../views/schemaCanvasSync";
 import { AddFileClassModal } from "./addFileClassModal";
 import { openBulkEdit } from "./bulkEditModal";
 import { openFileClassSchema } from "./fileClassSchemaModal";
@@ -109,9 +114,25 @@ export class FileclassContextMenu extends Component {
 		}
 		menu.addItem((item) =>
 			item
+				.setTitle("Insert missing fields across this fileClass")
+				.setIcon("plus")
+				.onClick(() => void bulkInsertMissingFields(this.plugin, fcName))
+		);
+		menu.addItem((item) =>
+			item
 				.setTitle("Bulk edit a field of this fileClass")
 				.setIcon("replace")
 				.onClick(() => openBulkEdit(this.plugin, fcName))
+		);
+		// The model these classes make is not visible anywhere else (#149). Upstream
+		// hangs this off the class *folder*; this fork discovers definitions vault-wide
+		// and has no such folder, so it lives on the definition itself — which is also
+		// where someone asking "how do these relate?" is already looking.
+		menu.addItem((item) =>
+			item
+				.setTitle("Draw the schema canvas")
+				.setIcon("git-fork")
+				.onClick(() => void syncSchemaCanvas(this.plugin))
 		);
 	}
 
@@ -136,12 +157,34 @@ export class FileclassContextMenu extends Component {
 					void insertMissingFields(this.plugin.app, file, this.plugin.index.getFields(file))
 				)
 		);
+		// Only when there is something to reorder: an entry that answers "already in order"
+		// is an entry that wasted a right-click. The check is one pass over the note's keys
+		// against the resolved fields, both already in memory (#104).
+		if (this.isOutOfOrder(file)) {
+			menu.addItem((item) =>
+				item
+					.setTitle("Reorder properties")
+					.setIcon("arrow-down-up")
+					.onClick(() => void this.reorder(file))
+			);
+		}
 		menu.addItem((item) =>
 			item
 				.setTitle("Add fileClass")
 				.setIcon("tag")
 				.onClick(() => new AddFileClassModal(this.plugin, file).open())
 		);
+		// The other end of a relation (#154). Offered on evidence the index can give for free —
+		// that some class declares a bound link field — because discovery is a vault scan and a
+		// right-click cannot wait for one. It says so itself when nothing points here.
+		if (vaultHasReverseRelations(this.plugin)) {
+			menu.addItem((item) =>
+				item
+					.setTitle("Insert notes that point here")
+					.setIcon("corner-left-down")
+					.onClick(() => void insertReverseRelation(this.plugin, file))
+			);
+		}
 		// One entry per class that applies (#23). Named, not a picker: from here the
 		// answer is usually one class, and this is also the only route for a class
 		// bound by tag, path or Base view — those leave no value to click in the
@@ -154,5 +197,29 @@ export class FileclassContextMenu extends Component {
 					.onClick(() => openFileClassSchema(this.plugin, name))
 			);
 		}
+	}
+
+	/** Does this note's frontmatter differ from the order its class declares? */
+	private isOutOfOrder(file: TFile): boolean {
+		const fields = this.plugin.index.getFields(file);
+		if (!fields.length) return false;
+		const keys = Object.keys(
+			this.plugin.app.metadataCache.getFileCache(file)?.frontmatter ?? {}
+		);
+		return reorderPlan(fields, keys, this.plugin.settings.unknownKeysPosition) !== null;
+	}
+
+	private async reorder(file: TFile): Promise<void> {
+		const { moved, unpositionable } = await reorderFrontmatter(
+			this.plugin.app,
+			file,
+			this.plugin.index.getFields(file),
+			this.plugin.settings.unknownKeysPosition
+		);
+		if (!moved) return;
+		const caveat = unpositionable.length
+			? ` (${unpositionable.join(", ")} stays where YAML puts it)`
+			: "";
+		new Notice(`Fileclass: reordered ${moved} properties${caveat}.`);
 	}
 }

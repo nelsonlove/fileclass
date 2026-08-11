@@ -167,31 +167,122 @@
  * one line of buttons; it wraps on a narrow pane instead of overflowing.
  */
 /*
- * Mirrors what Obsidian declares on .metadata-add-button — metadata label font
- * (`.text-icon-button` alone would give --font-ui-small, a size smaller) and the
- * same 0.5em top margin, which resolves against that font. Variables, not the
- * numbers they currently evaluate to, so the row stays on one baseline when a
- * theme or the user changes the metadata font.
+ * The actions and Obsidian's own "Add property" are **one wrapping row**, not two.
+ *
+ * The group used to be an inline-flex box of its own, and an inline-level box cannot be
+ * split across lines: measured on a class note, 119px of "Add property" plus 627px of
+ * actions against a 720px container, so all five dropped below together while the line
+ * above stayed nearly empty. `display: contents` drops the wrapper's box and leaves its
+ * buttons as inline-level siblings of the native one, so the break happens *between
+ * buttons* — the row fills, then continues on the next line.
+ *
+ * Spacing therefore lives on each button rather than on a flex gap. `0.5em` above mirrors
+ * what Obsidian declares on .metadata-add-button, and resolves against the metadata label
+ * font, so a theme changing that font keeps every button on one baseline.
  */
 .metadata-content > .fileclass-prop-actions {
-	display: inline-flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: var(--size-4-1);
-	font-size: var(--metadata-label-font-size);
-	font-family: var(--metadata-label-font);
-	margin: 0.5em 0 0 var(--size-4-2);
-	vertical-align: top;
+	display: contents;
 }
 .metadata-container .fileclass-prop-action {
+	display: inline-flex;
+	align-items: center;
+	vertical-align: top;
+	margin: 0.5em 0 0 var(--size-4-2);
 	font-size: var(--metadata-label-font-size);
 	font-family: var(--metadata-label-font);
-	padding-inline-start: var(--size-2-3);
+	/* Symmetric, so the space between two buttons is the same wherever the row breaks. */
+	padding-inline: var(--size-2-3);
+	/* A label is one target: "Bulk edit a field" never breaks across two lines. */
+	white-space: nowrap;
 	cursor: pointer;
 	color: var(--text-muted);
 }
 .metadata-container .fileclass-prop-action:hover {
 	color: var(--text-normal);
+}
+
+/*
+ * A class note's `fields` row: the schema, not its JSON.
+ *
+ * Obsidian has no editor for a list of objects, so it printed the raw value in the warning
+ * colour it keeps for values nobody can interpret — on the one note where that value is the
+ * subject. The marker drops the warning; the summary is a control, and says so.
+ */
+.metadata-property-value-item.fileclass-fields-row {
+	color: var(--text-normal);
+	white-space: normal;
+}
+.fileclass-fields-summary {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	cursor: pointer;
+	color: var(--text-muted);
+}
+.fileclass-fields-summary:hover {
+	color: var(--text-normal);
+}
+.fileclass-fields-wrench {
+	display: inline-flex;
+	align-items: center;
+}
+.fileclass-fields-wrench svg {
+	width: 15px;
+	height: 15px;
+}
+
+/* A value a picker shows but will not add: greyed, with the reason on its second line. */
+.fileclass-toggle-row.fileclass-row-disabled .setting-item-name {
+	color: var(--text-faint);
+}
+.fileclass-toggle-row.fileclass-row-disabled {
+	cursor: default;
+}
+.fileclass-toggle-row.fileclass-row-disabled:hover {
+	background-color: transparent !important;
+}
+
+/*
+ * A placeholder while the table has no data yet.
+ *
+ * It exists to keep the view container from being `:empty`, which Obsidian hides in an embed —
+ * and a hidden container makes the Bases controller suspend the very query that would fill it.
+ * Nothing to see; it only has to be a child.
+ */
+.fileclass-table-pending {
+	min-height: 1px;
+}
+
+/*
+ * The `valid` column filters on itself (#142). Bases can register a view and nothing else, so
+ * validity is not a property its own Filter menu can see; this header is the control instead.
+ */
+th.fc-valid-header {
+	cursor: pointer;
+	white-space: nowrap;
+}
+th.fc-valid-header.is-filtering {
+	color: var(--text-accent);
+}
+.fc-valid-count {
+	color: var(--text-error);
+	font-variant-numeric: tabular-nums;
+}
+tr.fc-row-filtered {
+	display: none;
+}
+
+/*
+ * A class whose table no longer mirrors it: the button that fixes it says so.
+ *
+ * The accent, not the error colour — nothing is broken, and a base one field behind is a
+ * normal state between a schema change and the moment you decide to carry it over.
+ */
+.metadata-container .fileclass-prop-action.is-fc-diverged {
+	color: var(--text-accent);
+}
+.metadata-container .fileclass-prop-action.is-fc-diverged:hover {
+	color: var(--text-accent-hover);
 }
 
 /*
@@ -954,6 +1045,14 @@ input.fileclass-color-circle.is-custom::-webkit-color-swatch-wrapper {
 	padding-top: var(--size-4-2);
 	background: var(--modal-background, var(--background-primary));
 	border-top: 1px solid var(--background-modifier-border);
+	/*
+	 * The background covers the scroll box edge to edge, not just the column of rows. A row
+	 * highlighted by hovering its class draws an accent bar 9px into the left gutter — outside
+	 * this footer's box — so rows scrolling underneath left a stack of little bars showing
+	 * through it. Measured: footer 501→1011, content 493→1019, bar at 492.
+	 */
+	margin-inline: calc(-1 * var(--size-4-3));
+	padding-inline: var(--size-4-3);
 }
 .fileclass-sticky-footer > .setting-item {
 	border-top: none;
@@ -1109,23 +1208,56 @@ body.fileclass-movable-modals .modal-container ~ .modal-container .modal-bg {
 	pointer-events: none;
 }
 /*
+ * A stack is LIFO for the pointer, as it already was for the keyboard (#118).
+ *
+ * Obsidian traps focus in the topmost modal and Escape closes the last one opened. The
+ * rules that used to live here handed the pointer to the whole stack instead, so mouse and
+ * keyboard disagreed about the same stack — and that is unsafe here, because these modals
+ * are draft editors: reaching into the parent while a child draft is open means the child's
+ * Save writes over a draft the parent has since changed. `mutateFields` has the same shape,
+ * so two stacked schema modals let the second overwrite the first one's work.
+ *
  * The container above is full-window too, and once its backdrop stopped catching clicks it
- * was the next thing to catch them (measured, in that order). So a stacked container is
- * click-through, and its own modal is put back in the way — which is what makes every
- * modal of a stack, not just the top one, clickable and draggable.
+ * was the next thing to catch them (measured, in that order) — so while modals are stacked
+ * every container is click-through, or the topmost one would cover the app and nothing
+ * underneath could even be seen to be inert.
  */
 body.fileclass-movable-modals .modal-container ~ .modal-container {
 	pointer-events: none;
 }
 /*
- * Everything the container holds except its backdrop takes the pointer back. Naming
- * `.modal` alone was a bug the operator found in a minute: a picker's container holds a
- * `.prompt`, not a `.modal` (measured: children are `modal-bg` + `prompt`), so every
- * suggestion in a File field's picker was unclickable — the click fell through to the
- * modal underneath. Whatever Obsidian puts in there is interactive; only the backdrop is
- * not.
+ * …and only the topmost container's contents take the pointer back.
+ *
+ * "The one with no container after it" rather than "the last-opened modal": a File field's
+ * picker opens **its own container**, holding a `.prompt` and not a `.modal`, above the
+ * modal that opened it. A rule phrased as "every stacked container is inert" would kill
+ * that picker. `> *:not(.modal-bg)` for the same reason — naming `.modal` was a bug the
+ * operator found in a minute, since the picker's children are `modal-bg` + `prompt`.
  */
-body.fileclass-movable-modals .modal-container ~ .modal-container > *:not(.modal-bg) {
+body.fileclass-movable-modals .modal-container:not(:has(~ .modal-container)) > *:not(.modal-bg) {
+	pointer-events: auto;
+}
+/*
+ * The modals underneath are inert, and say so: full strength on the one that acts, dimmed
+ * below. Dimming controls that still answered the pointer would have misrepresented them,
+ * which is why the two arrive together rather than one before the other.
+ *
+ * Inert on the *modal*, not on its container: the bottom container is deliberately left
+ * catching the pointer, since it is the only thing standing between a stray click and the
+ * app behind the stack. Measured, and it is why this rule exists at all — with every
+ * container click-through, a click over a lower modal landed on the note's own header.
+ */
+body.fileclass-movable-modals .modal-container:has(~ .modal-container) > *:not(.modal-bg) {
+	pointer-events: none;
+	opacity: 0.62;
+}
+/*
+ * An inactive modal can still be **moved**: rearranging what you can see is the reason this
+ * setting exists, and moving one changes no data. It is how any window manager behaves —
+ * you can drag a background window, you cannot act inside it. The exception is the drag
+ * handle itself, which is the title.
+ */
+body.fileclass-movable-modals .modal-container:has(~ .modal-container) .fileclass-drag-handle {
 	pointer-events: auto;
 }
 /*
@@ -1231,9 +1363,17 @@ body.is-mobile .prompt.fileclass-prompt {
 .modal-content.fileclass-scroll-body .setting-item-description {
 	font-size: var(--font-ui-smaller);
 }
-/* 32px is a page metric. In a dense list the button, not the text, sets the row's
-   height — so the row is 32px tall to hold one word. */
-.modal-content.fileclass-scroll-body button:not(.clickable-icon) {
+/*
+ * 32px is a page metric. In a dense list the button, not the text, sets the row's
+ * height — so the row is 32px tall to hold one word.
+ *
+ * Buttons that are a *shape* rather than a label are exempt: the colour swatches
+ * carry their own 30×30 and a `border-radius: 50%`, so being given this rule's
+ * height and horizontal padding turned every one of them into an ellipse (measured
+ * at 30×24, padding `0 8px`). Same for the side chips, which are square by intent.
+ */
+.modal-content.fileclass-scroll-body
+	button:not(.clickable-icon):not(.fileclass-color-circle):not(.fileclass-side-chip) {
 	height: var(--fc-button-h);
 	padding: 0 var(--size-4-2);
 	font-size: var(--fc-control-font);
@@ -1307,4 +1447,66 @@ body.is-mobile .prompt.fileclass-prompt {
 .fileclass-object-value {
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
+}
+/* Where a class came from, in a note's breadcrumb: `Media › Book (from /Reading list)`. Muted
+   and a size down — it explains the name beside it rather than competing with it. */
+.fileclass-breadcrumb-origin {
+	margin-left: 4px;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+/*
+ * `shorterModal` — a recording aid, set in data.json and nowhere else (see the setting).
+ *
+ * A take burns its subtitles along the bottom of the frame, and a modal listing sixteen
+ * fields reaches straight into them. This takes 90px off the body's cap and pins the box
+ * 45px from the top of the window, so the two stop overlapping without shrinking the app.
+ *
+ * Scoped to our own modals: `.fileclass-scroll-body` is on the content of every one of them,
+ * so `:has()` finds the box that holds it and leaves Obsidian's alone.
+ */
+body.fileclass-shorter-modals .modal-container:has(> .modal .fileclass-scroll-body) {
+	align-items: flex-start;
+}
+/*
+ * The box itself is bounded, not just its scrolling body: capping the content alone left the
+ * modal running to the very bottom of the window — measured, `bottomGap: 0` — because that cap
+ * (80vh) was already taller than what remains under a 45px offset.
+ */
+body.fileclass-shorter-modals .modal:has(> .fileclass-scroll-body) {
+	margin-top: 45px;
+	/*
+	 * The reserve is calibrated on the **tallest caption a take may show**, not an average
+	 * one. Measured in a running take: the caption box is 61px for one line, 92 for two and
+	 * 123 for three, always sitting 6vh off the bottom of the window. So a three-line caption
+	 * starts 176px above the floor — and a flat 90px left 54px of a two-line one lying over
+	 * the modal, on the first step of take 026.
+	 *
+	 * `6vh + 133px` is that band plus ten pixels of air. Fixed rather than measured live on
+	 * purpose: a modal that resized between steps because a caption grew a line would be worse
+	 * on camera than one that is a little short.
+	 */
+	max-height: calc(100vh - 45px - (6vh + 133px));
+	display: flex;
+	flex-direction: column;
+}
+/* The body takes what the box leaves and scrolls inside it. `min-height: 0` is what lets a
+   flex child shrink below its content — without it the box grows past its own maximum. */
+body.fileclass-shorter-modals .modal-content.fileclass-scroll-body {
+	max-height: none;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+/* What a rename will not touch, said in its confirmation modal: the bases that still name the
+   old property. A caveat, not an error — it is information, and the colour says so. */
+.fileclass-rename-caveat {
+	margin: var(--size-4-2) 0;
+	padding: var(--size-2-3) var(--size-4-2);
+	border-left: 3px solid var(--text-warning);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 }

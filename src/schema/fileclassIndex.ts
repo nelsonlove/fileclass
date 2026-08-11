@@ -8,7 +8,7 @@
  * Rebuild is driven by main.ts (debounced metadataCache 'resolved' + fileClass
  * file changes). On each rebuild it fires the `fileclass:indexed` event.
  */
-import { App, Events, TFile, getAllTags, parseYaml } from "obsidian";
+import { App, BookmarkItem, Events, TFile, getAllTags, parseYaml } from "obsidian";
 
 import { dateFormatDefaults, FileclassSettings } from "../settings/settings";
 import { FILECLASS_EXTENSION } from "./constants";
@@ -18,6 +18,7 @@ import { fileClassNameFromFile, ParsedFileClass, parseFileClass } from "./fileCl
 import { splitFileClassSource } from "./fileClassSource";
 import { computeAncestors, resolveInheritedFields } from "./inheritance";
 import {
+	BindingOrigin,
 	FileBinding,
 	FileClassRegistry,
 	resolveBinding,
@@ -53,6 +54,16 @@ export class FileclassIndex extends Events {
 	private tagBindings = new Map<string, string>();
 	private pathBindings = new Map<string, string>();
 	private bookmarkBindings = new Map<string, string>();
+	/**
+	 * note path → the bookmark groups holding it, nested ones as `parent/child`, each note
+	 * counted for its group and that group's ancestors.
+	 *
+	 * Built once per rebuild rather than asked per note: the alternative walks the whole
+	 * bookmark tree for every note in the vault. It also closes a hole — the resolver has
+	 * accepted `bookmarkGroups` since day one and nothing ever filled it, so a class bound to
+	 * a bookmark group claimed nothing at all (#121's take found it).
+	 */
+	private bookmarkGroupsByPath = new Map<string, string[]>();
 	/** Aggregated non-fatal parse problems from the last rebuild. */
 	errors: string[] = [];
 	// Rebuild is async (non-md reads); serialize overlapping calls and coalesce a
@@ -118,6 +129,9 @@ export class FileclassIndex extends Events {
 		}
 		this.computeInheritance();
 		this.buildBindingMaps();
+		// A vault can bookmark notes with no class at all, and this map costs one walk
+		// of the bookmark tree — so it is built unconditionally, like the binding maps.
+		this.buildBookmarkMap();
 		// Notify our own listeners and the workspace (external consumers).
 		this.trigger(INDEXED_EVENT);
 		this.app.workspace.trigger(INDEXED_EVENT);
@@ -132,7 +146,17 @@ export class FileclassIndex extends Events {
 		this.tagBindings.clear();
 		this.pathBindings.clear();
 		this.bookmarkBindings.clear();
+		this.bookmarkGroupsByPath.clear();
 		this.errors = [];
+	}
+
+	/**
+	 * Is this file a fileClass declaration? Upstream tests membership of the class
+	 * folder; this fork discovers definitions vault-wide by extension, so identity is
+	 * the extension itself — no setting, and correct for a definition in any folder.
+	 */
+	private isClassNote(file: TFile): boolean {
+		return !!fileClassNameFromFile(file);
 	}
 
 	/** Reads and parses one `.fileclass` file (no shared-state mutation). Returns
@@ -194,8 +218,13 @@ export class FileclassIndex extends Events {
 		for (const [name, parsed] of this.byName) {
 			const { mapWithTag, tagNames, filesPaths, bookmarksGroups } = parsed.options;
 			// mapWithTag → the fileClass name itself is the tag (single-word only).
-			if (mapWithTag && !name.includes(" ")) this.tagBindings.set(name, name);
-			for (const tag of tagNames) if (!tag.includes(" ")) this.tagBindings.set(tag, name);
+			// Lower case, because a tag's case is not part of its identity: see the note on
+			// `tagBindings` in resolver.ts. The class keeps its own capitalisation everywhere
+			// else — this is the lookup key, not the name.
+			if (mapWithTag && !name.includes(" ")) this.tagBindings.set(name.toLowerCase(), name);
+			for (const tag of tagNames) {
+				if (!tag.includes(" ")) this.tagBindings.set(tag.toLowerCase(), name);
+			}
 			for (const path of filesPaths) this.pathBindings.set(path, name);
 			for (const group of bookmarksGroups) this.bookmarkBindings.set(group, name);
 		}
@@ -221,9 +250,17 @@ export class FileclassIndex extends Events {
 		);
 	}
 
-	/** A read-only registry view for the pure resolver. */
-	registry(): FileClassRegistry {
-		const global = this.resolveGlobalName();
+	/**
+	 * A read-only registry view for the pure resolver.
+	 *
+	 * `forFile` exists for one rule: the global fileClass never applies to a **class
+	 * note**. A global class is meant for a vault where every note is the same kind of
+	 * thing, and `Book.fileclass` is not one of those — it is the declaration itself.
+	 * Measured upstream before the guard: setting a global class typed every definition
+	 * with it, so they showed up in their own class's views.
+	 */
+	registry(forFile?: TFile): FileClassRegistry {
+		const global = forFile && this.isClassNote(forFile) ? undefined : this.resolveGlobalName();
 		return {
 			has: (name) => this.byName.has(name),
 			fieldsOf: (name) => this.fieldsByName.get(name) ?? [],
@@ -246,12 +283,54 @@ export class FileclassIndex extends Events {
 			this.nameByPath
 		);
 		const tags = (cache ? getAllTags(cache) ?? [] : []).map((t) => t.replace(/^#/, ""));
-		return { innerNames, tags, folderPath: file.parent?.path ?? "" };
+		return {
+			innerNames,
+			tags,
+			folderPath: file.parent?.path ?? "",
+			bookmarkGroups: this.bookmarkGroupsByPath.get(file.path) ?? [],
+		};
+	}
+
+	/**
+	 * Walks the Bookmarks core plugin once, recording which groups hold each file. A file in
+	 * `Films/Tarkovsky` counts for `Films/Tarkovsky` **and** `Films`, the way a nested tag
+	 * counts for its parent — a class bound to the outer group claims what the inner one holds.
+	 */
+	private buildBookmarkMap(): void {
+		const instance = this.app.internalPlugins?.plugins?.bookmarks?.instance;
+		const items = instance?.getBookmarks?.();
+		if (!items?.length) return;
+
+		const walk = (list: BookmarkItem[], groups: string[]): void => {
+			for (const item of list) {
+				if (item.type === "group") {
+					const title = (item.title ?? "").trim();
+					if (!title) continue;
+					const path = [...groups, title];
+					walk(item.items ?? [], path);
+					continue;
+				}
+				const filePath = typeof item.path === "string" ? item.path : "";
+				if (!filePath || !groups.length) continue;
+				// Every ancestor, most specific last — the order does not matter, the set does.
+				const names = groups.map((_, i) => groups.slice(0, i + 1).join("/"));
+				const known = this.bookmarkGroupsByPath.get(filePath) ?? [];
+				this.bookmarkGroupsByPath.set(filePath, [...new Set([...known, ...names])]);
+			}
+		};
+		walk(items, []);
 	}
 
 	/** Full binding resolution for a note (fileClasses + merged fields). */
 	resolve(file: TFile): Resolution {
-		const resolution = resolveBinding(this.bindingFor(file), this.registry());
+		// A definition declares classes; it is never a note *of* one. Upstream gets this
+		// from the class folder being its own place; this fork scatters `.fileclass` files
+		// vault-wide, so a folder mapped via `filesPaths` would otherwise bind the
+		// definitions sitting in it — each then appearing in its own class's table and
+		// failing every required field. Binding, not just the global class, is excluded.
+		if (this.isClassNote(file))
+			return { fileClassNames: [], fields: [], source: "none", origins: new Map() };
+		const resolution = resolveBinding(this.bindingFor(file), this.registry(file));
 		// Fold the plugin-wide write format into date fields that declare none, so
 		// every consumer (input, validation, display parsing) sees one effective
 		// format. No-op — the same array — when the defaults are blank.
@@ -261,6 +340,11 @@ export class FileclassIndex extends Events {
 
 	getFileClasses(file: TFile): string[] {
 		return this.resolve(file).fileClassNames;
+	}
+
+	/** Why each of a note's classes applies — `#album`, `/Reading list`, `*Film club`. */
+	getBindingOrigins(file: TFile): Map<string, BindingOrigin> {
+		return this.resolve(file).origins;
 	}
 
 	getFields(file: TFile): Field[] {
