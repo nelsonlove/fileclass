@@ -394,6 +394,15 @@ All notable changes to Fileclass are documented here. The format follows
 
 ## [0.2.0] - 2026-08-01
 
+### Fixed
+
+- **The Global fileClass setting accepts a wikilink**, the form every other class
+  reference in this fork uses (`fileClass:`, `extends:`). Its resolver matched bare
+  names, `.fileclass`-suffixed names and paths — but not `[[Default.fileclass]]` —
+  so a setting written that way resolved to nothing and the global binding silently
+  never fired. Matching now delegates to the same resolver `extends` uses, so the
+  two cannot drift, and `|alias` / `#subpath` are handled for free.
+
 ### UI
 
 - **A field's settings, one Alt-click from the note.** In the note-fields modal, Alt

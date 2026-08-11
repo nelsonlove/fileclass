@@ -11,7 +11,7 @@
 import { App, Events, TFile, getAllTags, parseYaml } from "obsidian";
 
 import { dateFormatDefaults, FileclassSettings } from "../settings/settings";
-import { FILECLASS_EXTENSION, FILECLASS_NAME_SUFFIX } from "./constants";
+import { FILECLASS_EXTENSION } from "./constants";
 import { withDefaultDateFormats } from "../fields/dateFormats";
 import { Field } from "./field";
 import { fileClassNameFromFile, ParsedFileClass, parseFileClass } from "./fileClass";
@@ -22,6 +22,7 @@ import {
 	FileClassRegistry,
 	resolveBinding,
 	resolveExtendsName,
+	resolveGlobalFileClassName,
 	resolveInnerFileClassNames,
 	Resolution,
 } from "./resolver";
@@ -203,18 +204,21 @@ export class FileclassIndex extends Events {
 	// -- registry / resolution ------------------------------------------------
 
 	/**
-	 * Resolves the Global fileClass setting to an indexed name. The setting may be
-	 * a bare name, a `.fileclass` name, or a path (legacy `classFilesPath` value);
-	 * fileClass names now carry the `.fileclass` suffix, so match forgivingly.
+	 * Resolves the Global fileClass setting to an indexed name. The setting may be a
+	 * wikilink (`"[[Default.fileclass]]"` — the form every other class reference in
+	 * this fork uses), a bare or `.fileclass`-suffixed name, or a path (legacy
+	 * `classFilesPath` value). The matching itself is pure and shared with `extends`.
 	 */
 	private resolveGlobalName(): string | undefined {
-		const raw = this.host.settings.globalFileClass;
-		if (!raw) return undefined;
-		const base = (raw.split("/").pop() ?? raw).replace(/\.md$/, "");
-		for (const cand of [raw, base, `${base}${FILECLASS_NAME_SUFFIX}`]) {
-			if (this.byName.has(cand)) return cand;
-		}
-		return undefined;
+		return resolveGlobalFileClassName(
+			this.host.settings.globalFileClass,
+			(link) => {
+				// No source path: the setting is vault-level, not written in any note.
+				const dest = this.app.metadataCache.getFirstLinkpathDest(link, "");
+				return dest ? this.nameByPath.get(dest.path) : undefined;
+			},
+			(name) => this.byName.has(name)
+		);
 	}
 
 	/** A read-only registry view for the pure resolver. */
