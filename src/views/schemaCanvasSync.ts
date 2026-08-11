@@ -79,7 +79,12 @@ export function collectSchemaClasses(plugin: FileclassPlugin): SchemaClass[] {
 				type: f.type,
 				nested: f.type === "Object" || f.type === "ObjectList" ? childCount(f.id) : undefined,
 			})),
-			extends: parsed.options.extends,
+			// The **canonical** parent, not the raw `extends` value. This fork accepts a
+			// wikilink (`"[[Book.fileclass]]"`) and a bare display name there, and the
+			// index resolves both — but the canvas matches `extends` against registry
+			// names, so passing the raw value drew no inheritance edge for either form
+			// and laid the class out as a root. `getAncestors` is already resolved.
+			extends: plugin.index.getAncestors(name)[0],
 			excludes: parsed.options.excludes,
 			mapWithTag: parsed.options.mapWithTag,
 			tagNames: parsed.options.tagNames,

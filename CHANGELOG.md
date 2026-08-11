@@ -27,6 +27,11 @@ All notable changes to Fileclass are documented here. The format follows
   Upstream's `alias.containsAny("Name")` joins `alias == "Name"` as a recognized stale
   form: both test a link-valued property as if it held strings, so under this fork either
   one filters the view down to nothing.
+- **The class `fields` row said "0 fields"** on every definition: it counted the list from
+  `metadataCache`, which never holds a non-markdown `.fileclass` file. It reads the index now.
+- **The schema canvas drew no inheritance edge** for `extends: "[[Book.fileclass]]"` or a bare
+  display name — it matched the raw value against registry names, so the two forms the fork
+  documents both laid the class out as a root. It uses the resolved parent now.
 - The schema canvas defaults to `Fileclass schema.canvas`, not a bare `Schema.canvas` at
   the vault root, where it could silently claim a canvas the user had already drawn (and
   then exclude it from the Canvas engine).

@@ -105,8 +105,17 @@ export function fileClassViewFilter(scope: ClassScope): { and: FilterClause[] } 
  * repairs them to the wikilink clause rather than leaving a permanently empty view.
  */
 function legacyClassClauses(scope: ClassScope): string[] {
-	const name = JSON.stringify(scope.name);
-	return [`${scope.alias} == ${name}`, `${scope.alias}.containsAny(${name})`];
+	// Both the fork's own suffixed name (`Book.fileclass`) and the bare name upstream
+	// uses (`Book`). A base written by upstream names the class the way upstream names
+	// classes, so matching only the suffixed form would leave exactly the base this is
+	// meant to repair looking hand-written — and permanently empty.
+	const names = new Set([scope.name, scope.name.replace(/\.fileclass$/, "")]);
+	const clauses: string[] = [];
+	for (const raw of names) {
+		const name = JSON.stringify(raw);
+		clauses.push(`${scope.alias} == ${name}`, `${scope.alias}.containsAny(${name})`);
+	}
+	return clauses;
 }
 
 /**

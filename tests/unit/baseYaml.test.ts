@@ -326,6 +326,37 @@ describe("repairing a base generated before its class was mapped", () => {
 		expect(base.views[0].filters).toEqual({ and: ['list(fileClass).contains("Author")'] });
 	});
 
+	it("repairs an upstream base that names the class without the .fileclass suffix", () => {
+		// The migration this actually has to survive: upstream writes `fileClass` values as
+		// bare strings and names classes without the suffix, so its base says
+		// `containsAny("Author")` while this fork's scope is `Author.fileclass`. Matching
+		// only the suffixed form left the one base this repairs looking hand-written.
+		const scope = { alias: "fileClass", name: "Author.fileclass" };
+		expect(isGeneratedScopeFilter({ and: ['fileClass.containsAny("Author")'] }, scope)).toBe(true);
+		expect(isGeneratedScopeFilter({ and: ['fileClass == "Author"'] }, scope)).toBe(true);
+
+		const base = {
+			views: [
+				{
+					type: "fileclass-table",
+					name: "Author.fileclass",
+					filters: { and: ['fileClass.containsAny("Author")'] },
+					order: ["file.name", "language"],
+				},
+			],
+		};
+		expect(mirrorBaseView(base, "Author.fileclass", ["language"], scope)).toBe(true);
+		expect(base.views[0].filters).toEqual({
+			and: ['list(fileClass).contains("Author.fileclass")'],
+		});
+	});
+
+	// A different class's clause is still the user's, suffix stripping notwithstanding.
+	it("does not treat another class's clause as its own", () => {
+		const scope = { alias: "fileClass", name: "Author.fileclass" };
+		expect(isGeneratedScopeFilter({ and: ['fileClass.containsAny("Editor")'] }, scope)).toBe(false);
+	});
+
 	it("repairs upstream's later `containsAny` clause, stale here for the same reason", () => {
 		// Upstream moved `==` → `containsAny` to fix multi-class notes. Both test a
 		// link-valued property as if it held strings, so under this fork either one
