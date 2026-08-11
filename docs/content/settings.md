@@ -12,7 +12,7 @@ All settings live under **Settings → Fileclass**.
 | Setting | What it does |
 |---------|--------------|
 | **fileClass alias** | Frontmatter key that binds a note to its fileClass(es). Default `fileClass`. |
-| **Global fileClass** | Applied to every note that has no other binding. Leave empty to disable. |
+| **Global fileClass** | Applied to every note that has no other binding. Leave empty to disable. Accepts a wikilink (`[[Default.fileclass]]`, the form used everywhere else), a bare name (`Default`), a full name (`Default.fileclass`), or a path. A value that matches no class is ignored silently — check the name if the binding does not appear. |
 | **Bases folder** | Where generated `<fileClass>.base` files are written. |
 | **fileClass icon** | Default icon for a fileClass without an explicit `icon` (each fileClass can override it, with a live preview + Lucide picker in its options). |
 | **Default date format** | moment.js format a `Date` field is **written** in when it declares no format of its own (e.g. `DD/MM/YYYY`). Blank stores the ISO form `YYYY-MM-DD`. |

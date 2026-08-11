@@ -77,8 +77,13 @@ describe("resolveExtendsName", () => {
 
 describe("resolveGlobalFileClassName", () => {
 	const has = (n: string): boolean => n === "Default.fileclass";
+	// Faithful to getFirstLinkpathDest: a link may carry a folder path, and it
+	// resolves to the same file. A fake that only matched the bare name would let a
+	// path-carrying wikilink pass for the wrong reason.
 	const resolveLink = (link: string): string | undefined =>
-		link === "Default.fileclass" ? "Default.fileclass" : undefined;
+		link === "Default.fileclass" || link === "Classes/Default.fileclass"
+			? "Default.fileclass"
+			: undefined;
 
 	// The regression this function exists for. Every other class reference in this
 	// fork is a wikilink, so that is what gets typed into the setting too — and the
@@ -111,6 +116,12 @@ describe("resolveGlobalFileClassName", () => {
 			"Default.fileclass"
 		);
 		expect(resolveGlobalFileClassName("Classes/Default.md", resolveLink, has)).toBe(
+			"Default.fileclass"
+		);
+	});
+
+	it("resolves a wikilink that carries a folder path", () => {
+		expect(resolveGlobalFileClassName("[[Classes/Default.fileclass]]", resolveLink, has)).toBe(
 			"Default.fileclass"
 		);
 	});
