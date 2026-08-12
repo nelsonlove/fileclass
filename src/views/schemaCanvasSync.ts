@@ -9,7 +9,7 @@
  * Sync is **explicit**, like `baseSync` and unlike the Canvas engine: this file is arranged by
  * hand, so writing it unasked is the clobber scenario the whole design avoids.
  */
-import { Notice, TFile, normalizePath } from "obsidian";
+import { Notice, TFile, TFolder, normalizePath } from "obsidian";
 
 import type FileclassPlugin from "../../main";
 import { baseBindingOptionsFromOptions, canvasOptions, listOptionsFromOptions } from "../fields/options";
@@ -27,12 +27,8 @@ const CANVAS_TYPES: ReadonlySet<FieldType> = new Set<FieldType>(["Canvas", "Canv
 export function schemaCanvasPath(plugin: FileclassPlugin): string {
 	const configured = plugin.settings.schemaCanvasPath?.trim();
 	if (configured) return normalizePath(configured.endsWith(".canvas") ? configured : `${configured}.canvas`);
-	// No class folder in this fork (definitions live anywhere), so there is no
-	// plugin-owned folder to put this in. `Fileclass schema.canvas` rather than the
-	// bare `Schema.canvas` upstream uses inside its own folder: at the vault root a
-	// generic name can collide with a canvas the user already drew, and
-	// `isSchemaCanvas()` would then quietly exclude theirs from the Canvas engine.
-	return normalizePath("Fileclass schema.canvas");
+	const folder = plugin.settings.classFilesPath.replace(/\/+$/, "");
+	return normalizePath(folder ? `${folder}/Schema.canvas` : "Schema.canvas");
 }
 
 /**
@@ -79,12 +75,7 @@ export function collectSchemaClasses(plugin: FileclassPlugin): SchemaClass[] {
 				type: f.type,
 				nested: f.type === "Object" || f.type === "ObjectList" ? childCount(f.id) : undefined,
 			})),
-			// The **canonical** parent, not the raw `extends` value. This fork accepts a
-			// wikilink (`"[[Book.fileclass]]"`) and a bare display name there, and the
-			// index resolves both — but the canvas matches `extends` against registry
-			// names, so passing the raw value drew no inheritance edge for either form
-			// and laid the class out as a root. `getAncestors` is already resolved.
-			extends: plugin.index.getAncestors(name)[0],
+			extends: parsed.options.extends,
 			excludes: parsed.options.excludes,
 			mapWithTag: parsed.options.mapWithTag,
 			tagNames: parsed.options.tagNames,
@@ -222,9 +213,8 @@ export function isSchemaCanvas(plugin: FileclassPlugin, path: string): boolean {
 	return normalizePath(path) === schemaCanvasPath(plugin);
 }
 
-/**
- * Upstream offers "Draw the schema canvas" on the class folder. This fork has no
- * class folder — definitions are found vault-wide — so the entry lives on a
- * `.fileclass` definition instead (see `ui/contextMenu.ts`) and nothing here needs
- * to recognise a folder.
- */
+/** The class folder, for the context-menu entry that offers this on it. */
+export function isClassFolder(plugin: FileclassPlugin, folder: TFolder): boolean {
+	const configured = plugin.settings.classFilesPath.replace(/\/+$/, "");
+	return !!configured && normalizePath(folder.path) === normalizePath(configured);
+}

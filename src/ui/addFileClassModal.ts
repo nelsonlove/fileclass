@@ -1,13 +1,11 @@
 /*
  * fileClass chooser (ARCHITECTURE.md §10, P1). A suggester to bind a fileClass
- * to the current note by writing a wikilink to it into the frontmatter alias.
- * Frontmatter-only via processFrontMatter (D2); a single value stays a scalar,
- * multiple become a list.
+ * to the current note by writing its frontmatter alias. Frontmatter-only via
+ * processFrontMatter (D2); a single value stays a scalar, multiple become a list.
  */
 import { Notice, SuggestModal, TFile } from "obsidian";
 
 import type FileclassPlugin from "../../main";
-import { mergeFileClassLink } from "./fileClassLinkValue";
 import { insertMissingFields } from "../commands/insertMissingFields";
 
 export class AddFileClassModal extends SuggestModal<string> {
@@ -40,16 +38,17 @@ export class AddFileClassModal extends SuggestModal<string> {
 			return;
 		}
 		const alias = this.plugin.settings.fileClassAlias;
-		// A plain wikilink to the class by name. fileClass names are unique, so no
-		// path qualification is needed; a bare `[[name]]` is always captured in
-		// `frontmatterLinks` (the read path) and matches the generated base filter,
-		// regardless of the vault's markdown-vs-wikilink link setting.
-		const link = `[[${name}]]`;
 		try {
 			await this.app.fileManager.processFrontMatter(this.file, (fm) => {
 				const fmRec = fm as Record<string, unknown>;
-				const links = mergeFileClassLink(fmRec[alias], link);
-				fmRec[alias] = links.length === 1 ? links[0] : links;
+				const current = fmRec[alias];
+				const names: string[] = Array.isArray(current)
+					? (current as unknown[]).map((n) => String(n))
+					: typeof current === "string" && current.trim()
+						? current.split(",").map((n) => n.trim())
+						: [];
+				if (!names.includes(name)) names.push(name);
+				fmRec[alias] = names.length === 1 ? names[0] : names;
 			});
 		} catch (err) {
 			new Notice(`Fileclass: could not add "${name}" (${(err as Error).message}).`);

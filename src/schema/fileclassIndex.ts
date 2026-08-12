@@ -1,30 +1,29 @@
 /*
  * FileclassIndex (ARCHITECTURE.md §10). The slim successor of Metadata Menu's
- * FieldIndex, keeping only: the fileClass registry (every `.fileclass` file
- * vault-wide), ancestors, resolved fields per class, and the file→fileClass
- * binding maps. `.fileclass` files are read via vault.cachedRead + parseYaml
- * (not markdown, so not in metadataCache); no dataview, no IndexedDB.
+ * FieldIndex, keeping only: the fileClass registry (parsed notes under
+ * classFilesPath), ancestors, resolved fields per class, and the file→fileClass
+ * binding maps. Frontmatter-only reads (D2); no dataview, no IndexedDB.
  *
  * Rebuild is driven by main.ts (debounced metadataCache 'resolved' + fileClass
  * file changes). On each rebuild it fires the `fileclass:indexed` event.
  */
-import { App, BookmarkItem, Events, TFile, getAllTags, parseYaml } from "obsidian";
+import { App, BookmarkItem, Events, TFile, getAllTags } from "obsidian";
 
 import { dateFormatDefaults, FileclassSettings } from "../settings/settings";
-import { FILECLASS_EXTENSION } from "./constants";
 import { withDefaultDateFormats } from "../fields/dateFormats";
 import { Field } from "./field";
-import { fileClassNameFromFile, ParsedFileClass, parseFileClass } from "./fileClass";
-import { splitFileClassSource } from "./fileClassSource";
+import {
+	fileClassNameFromPath,
+	ParsedFileClass,
+	parseFileClass,
+	toStringArray,
+} from "./fileClass";
 import { computeAncestors, resolveInheritedFields } from "./inheritance";
 import {
 	BindingOrigin,
 	FileBinding,
 	FileClassRegistry,
 	resolveBinding,
-	resolveExtendsName,
-	resolveGlobalFileClassName,
-	resolveInnerFileClassNames,
 	Resolution,
 } from "./resolver";
 
@@ -35,14 +34,6 @@ export interface IndexHost {
 }
 
 export const INDEXED_EVENT = "fileclass:indexed";
-
-/** A definition file read during rebuild's async phase, before the sync swap. */
-interface ReadFileClass {
-	file: TFile;
-	name: string;
-	parsed: ParsedFileClass;
-	ioError?: string;
-}
 
 export class FileclassIndex extends Events {
 	private byName = new Map<string, ParsedFileClass>();
@@ -66,10 +57,6 @@ export class FileclassIndex extends Events {
 	private bookmarkGroupsByPath = new Map<string, string[]>();
 	/** Aggregated non-fatal parse problems from the last rebuild. */
 	errors: string[] = [];
-	// Rebuild is async (non-md reads); serialize overlapping calls and coalesce a
-	// trailing one so `clear()` never interleaves with an in-flight population.
-	private rebuildInFlight: Promise<void> | null = null;
-	private rebuildQueued = false;
 
 	constructor(private readonly host: IndexHost) {
 		super();
@@ -81,56 +68,20 @@ export class FileclassIndex extends Events {
 
 	// -- rebuild --------------------------------------------------------------
 
-	/**
-	 * Rescans every `.fileclass` definition file vault-wide and recomputes derived
-	 * maps. Async because `.fileclass` files are not markdown, so their schema is
-	 * read via `vault.cachedRead` rather than the metadata cache. Overlapping calls
-	 * are serialized (and a burst coalesced to one trailing run) so a concurrent
-	 * `clear()` can never wipe an in-flight population.
-	 */
-	rebuild(): Promise<void> {
-		if (this.rebuildInFlight) {
-			this.rebuildQueued = true;
-			return this.rebuildInFlight;
-		}
-		this.rebuildInFlight = this.runRebuild().finally(() => {
-			this.rebuildInFlight = null;
-			if (this.rebuildQueued) {
-				this.rebuildQueued = false;
-				void this.rebuild();
-			}
-		});
-		return this.rebuildInFlight;
-	}
-
-	private async runRebuild(): Promise<void> {
-		const files = this.app.vault.getFiles().filter((f) => f.extension === FILECLASS_EXTENSION);
-		// Async READ phase — read every definition into locals without touching
-		// shared state, so readers keep seeing the previous *complete* index.
-		const results: ReadFileClass[] = [];
-		for (const file of files) {
-			const r = await this.readFileClassNote(file);
-			if (r) results.push(r);
-		}
-		// Synchronous SWAP phase — no await here, so the index is never observed
-		// cleared or half-populated: readers see either the old or the new complete
-		// state (fixes blank-during-rebuild reads in the editors and base lookups).
+	/** Rescans the class-files folder and recomputes every derived map. */
+	rebuild(): void {
 		this.clear();
-		for (const { file, name, parsed, ioError } of results) {
-			const prior = this.pathByName.get(name);
-			if (prior && prior !== file.path) {
-				this.errors.push(`Duplicate fileClass "${name}": ${file.path} shadows ${prior}.`);
-			}
-			this.byName.set(name, parsed);
-			this.nameByPath.set(file.path, name);
-			this.pathByName.set(name, file.path);
-			if (ioError) this.errors.push(ioError);
-			if (parsed.errors.length) this.errors.push(...parsed.errors);
+		const classFilesPath = this.host.settings.classFilesPath;
+		if (classFilesPath) {
+			const files = this.app.vault
+				.getMarkdownFiles()
+				.filter((f) => f.path.startsWith(classFilesPath));
+			for (const file of files) this.indexFileClassNote(file);
+			this.computeInheritance();
+			this.buildBindingMaps();
 		}
-		this.computeInheritance();
-		this.buildBindingMaps();
-		// A vault can bookmark notes with no class at all, and this map costs one walk
-		// of the bookmark tree — so it is built unconditionally, like the binding maps.
+		// Outside the class-folder guard: a vault can bookmark notes with no class at all, and
+		// this map costs one walk of the bookmark tree.
 		this.buildBookmarkMap();
 		// Notify our own listeners and the workspace (external consumers).
 		this.trigger(INDEXED_EVENT);
@@ -150,57 +101,25 @@ export class FileclassIndex extends Events {
 		this.errors = [];
 	}
 
-	/**
-	 * Is this file a fileClass declaration? Upstream tests membership of the class
-	 * folder; this fork discovers definitions vault-wide by extension, so identity is
-	 * the extension itself — no setting, and correct for a definition in any folder.
-	 */
+	/** Is this note a fileClass declaration — a file of the class folder? */
 	private isClassNote(file: TFile): boolean {
-		return !!fileClassNameFromFile(file);
+		const folder = this.host.settings.classFilesPath;
+		return !!folder && file.path.startsWith(folder);
 	}
 
-	/** Reads and parses one `.fileclass` file (no shared-state mutation). Returns
-	 *  null for a non-fileClass file. Naming is vault-wide name-keyed, so same-named
-	 *  files collide (surfaced during the swap phase). */
-	private async readFileClassNote(file: TFile): Promise<ReadFileClass | null> {
-		const name = fileClassNameFromFile(file);
-		if (!name) return null;
-		// `.fileclass` is not markdown, so parse the YAML block from the raw text.
-		const raw = await this.app.vault.cachedRead(file);
-		const { frontmatter } = splitFileClassSource(raw);
-		let fm: Record<string, unknown> = {};
-		let ioError: string | undefined;
-		if (frontmatter.trim()) {
-			try {
-				const y: unknown = parseYaml(frontmatter);
-				if (y && typeof y === "object") fm = y as Record<string, unknown>;
-			} catch (e) {
-				ioError = `Malformed YAML in ${file.path}: ${(e as Error).message}`;
-			}
-		}
-		return { file, name, parsed: parseFileClass(name, fm), ioError };
+	private indexFileClassNote(file: TFile): void {
+		const name = fileClassNameFromPath(this.host.settings.classFilesPath, file.path);
+		if (!name) return;
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const parsed = parseFileClass(name, frontmatter);
+		this.byName.set(name, parsed);
+		this.nameByPath.set(file.path, name);
+		this.pathByName.set(name, file.path);
+		if (parsed.errors.length) this.errors.push(...parsed.errors);
 	}
 
 	private computeInheritance(): void {
-		// `extends` may be a wikilink (`"[[Note.fileclass]]"`) or a bare/display
-		// name; resolve each to a canonical registry name once, up front.
-		const resolvedParent = new Map<string, string | undefined>();
-		for (const name of this.byName.keys()) {
-			const raw = this.byName.get(name)?.options.extends;
-			const sourcePath = this.pathByName.get(name) ?? "";
-			resolvedParent.set(
-				name,
-				resolveExtendsName(
-					raw,
-					(link) => {
-						const dest = this.app.metadataCache.getFirstLinkpathDest(link, sourcePath);
-						return dest ? this.nameByPath.get(dest.path) : undefined;
-					},
-					(n) => this.byName.has(n)
-				)
-			);
-		}
-		const parentOf = (n: string) => resolvedParent.get(n);
+		const parentOf = (n: string) => this.byName.get(n)?.options.extends;
 		for (const name of this.byName.keys()) {
 			const ancestors = computeAncestors(name, parentOf);
 			this.ancestorsByName.set(name, ancestors);
@@ -233,34 +152,19 @@ export class FileclassIndex extends Events {
 	// -- registry / resolution ------------------------------------------------
 
 	/**
-	 * Resolves the Global fileClass setting to an indexed name. The setting may be a
-	 * wikilink (`"[[Default.fileclass]]"` — the form every other class reference in
-	 * this fork uses), a bare or `.fileclass`-suffixed name, or a path (legacy
-	 * `classFilesPath` value). The matching itself is pure and shared with `extends`.
-	 */
-	private resolveGlobalName(): string | undefined {
-		return resolveGlobalFileClassName(
-			this.host.settings.globalFileClass,
-			(link) => {
-				// No source path: the setting is vault-level, not written in any note.
-				const dest = this.app.metadataCache.getFirstLinkpathDest(link, "");
-				return dest ? this.nameByPath.get(dest.path) : undefined;
-			},
-			(name) => this.byName.has(name)
-		);
-	}
-
-	/**
 	 * A read-only registry view for the pure resolver.
 	 *
-	 * `forFile` exists for one rule: the global fileClass never applies to a **class
-	 * note**. A global class is meant for a vault where every note is the same kind of
-	 * thing, and `Book.fileclass` is not one of those — it is the declaration itself.
-	 * Measured upstream before the guard: setting a global class typed every definition
-	 * with it, so they showed up in their own class's views.
+	 * `forFile` exists for one rule: the global fileClass never applies to a **class note**.
+	 * A global class is meant for a vault where every note is the same kind of thing, and
+	 * `Classes/Book.md` is not one of those things — it is the declaration itself. Measured
+	 * before the guard: setting a global class typed the whole class folder with it, so the
+	 * definitions showed up in their own class's views.
 	 */
 	registry(forFile?: TFile): FileClassRegistry {
-		const global = forFile && this.isClassNote(forFile) ? undefined : this.resolveGlobalName();
+		const global =
+			forFile && this.isClassNote(forFile)
+				? undefined
+				: this.host.settings.globalFileClass || undefined;
 		return {
 			has: (name) => this.byName.has(name),
 			fieldsOf: (name) => this.fieldsByName.get(name) ?? [],
@@ -276,12 +180,7 @@ export class FileclassIndex extends Events {
 	bindingFor(file: TFile): FileBinding {
 		const cache = this.app.metadataCache.getFileCache(file);
 		const alias = this.host.settings.fileClassAlias;
-		const innerNames = resolveInnerFileClassNames(
-			cache?.frontmatterLinks ?? [],
-			alias,
-			(link) => this.app.metadataCache.getFirstLinkpathDest(link, file.path)?.path ?? null,
-			this.nameByPath
-		);
+		const innerNames = toStringArray(cache?.frontmatter?.[alias]);
 		const tags = (cache ? getAllTags(cache) ?? [] : []).map((t) => t.replace(/^#/, ""));
 		return {
 			innerNames,
@@ -323,13 +222,6 @@ export class FileclassIndex extends Events {
 
 	/** Full binding resolution for a note (fileClasses + merged fields). */
 	resolve(file: TFile): Resolution {
-		// A definition declares classes; it is never a note *of* one. Upstream gets this
-		// from the class folder being its own place; this fork scatters `.fileclass` files
-		// vault-wide, so a folder mapped via `filesPaths` would otherwise bind the
-		// definitions sitting in it — each then appearing in its own class's table and
-		// failing every required field. Binding, not just the global class, is excluded.
-		if (this.isClassNote(file))
-			return { fileClassNames: [], fields: [], source: "none", origins: new Map() };
 		const resolution = resolveBinding(this.bindingFor(file), this.registry(file));
 		// Fold the plugin-wide write format into date fields that declare none, so
 		// every consumer (input, validation, display parsing) sees one effective
@@ -395,19 +287,17 @@ export class FileclassIndex extends Events {
 		return this.nameByPath.get(path);
 	}
 
-	/** The `.fileclass` definition backing a fileClass, resolved from the index
-	 *  (falling back to a vault-wide filename lookup for a just-created class). */
+	/** The Markdown note backing a fileClass, from the index (falling back to the conventional path) */
 	getFileClassFile(name: string): TFile | null {
 		const path = this.pathByName.get(name);
 		if (path) {
 			const file = this.app.vault.getFileByPath(path);
 			if (file instanceof TFile) return file;
 		}
-		// Not yet indexed (e.g. a class created just now, before the debounced
-		// rebuild fires) — fall back to a direct vault lookup by filename.
-		const match = this.app.vault
-			.getFiles()
-			.find((f) => f.extension === FILECLASS_EXTENSION && f.name === name);
-		return match ?? null;
+		// Not indexed yet (class created before the debounced rebuild fired).
+		const folder = this.host.settings.classFilesPath;
+		if (!folder) return null;
+		const file = this.app.vault.getFileByPath(`${folder}${name}.md`);
+		return file instanceof TFile ? file : null;
 	}
 }

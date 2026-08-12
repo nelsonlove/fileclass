@@ -25,6 +25,21 @@ export class FileclassSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
+			.setName("Class files folder")
+			.setDesc("Folder containing your fileClass notes. Notes here define schemas.")
+			.addText((text) => {
+				text
+					.setPlaceholder("e.g. Settings/fileClasses")
+					.setValue(this.plugin.settings.classFilesPath)
+					.onChange(async (value) => {
+						this.plugin.settings.classFilesPath = normalizeFolderPath(value);
+						await this.plugin.saveSettings();
+						this.plugin.index.rebuild();
+					});
+				new FolderSuggest(this.app, text.inputEl);
+			});
+
+		new Setting(containerEl)
 			.setName("fileClass alias")
 			.setDesc("Frontmatter key that binds a note to its fileClass(es).")
 			.addText((text) =>
@@ -34,7 +49,7 @@ export class FileclassSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.fileClassAlias = value.trim() || "fileClass";
 						await this.plugin.saveSettings();
-						void this.plugin.index.rebuild();
+						this.plugin.index.rebuild();
 					})
 			);
 
@@ -65,7 +80,7 @@ export class FileclassSettingTab extends PluginSettingTab {
 				dropdown.setValue(current).onChange(async (value) => {
 					this.plugin.settings.globalFileClass = value;
 					await this.plugin.saveSettings();
-					void this.plugin.index.rebuild();
+					this.plugin.index.rebuild();
 				});
 			});
 

@@ -23,14 +23,16 @@ import {
 
 import type FileclassPlugin from "../../main";
 import { isRootField } from "../schema/field";
-import { FileClassOptions } from "../schema/fileClass";
+import { FileClassOptions, parseFileClass } from "../schema/fileClass";
 import { buildBaseYaml, ClassScope, isBaseViewSynced, mirrorBaseView } from "./baseYaml";
 
 export type BaseSyncStatus = "none" | "synced" | "diverged";
 
-/** fileClass options from the index (`.fileclass` files are not in metadataCache). */
+/** fileClass options read fresh from the note (the index is debounced). */
 function liveOptions(plugin: FileclassPlugin, name: string): FileClassOptions | undefined {
-	return plugin.index.getFileClass(name)?.options;
+	const file = plugin.index.getFileClassFile(name);
+	if (!file) return undefined;
+	return parseFileClass(name, plugin.app.metadataCache.getFileCache(file)?.frontmatter).options;
 }
 
 /**

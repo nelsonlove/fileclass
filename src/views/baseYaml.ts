@@ -54,15 +54,28 @@ export interface ClassScope {
 export type FilterClause = string | { or: string[] };
 
 /**
- * The single filter clause matching notes that name the class in frontmatter,
- * e.g. `list(fileClass).contains("Book")`. In this fork fileClass values are
- * wikilinks (a scalar or a list of Links); `list(...)` normalizes to a list and
- * `.contains(...)` matches the linked definition by name — the idiom real vault
- * bases use for link-valued properties. Shared by the create path (as a YAML
- * line) and the sync path (inside a `{ and: [...] }` object).
+ * The clause matching notes that name the class in frontmatter, e.g.
+ * `fileClass.containsAny("Book")`.
+ *
+ * `containsAny`, not `==`: a note may carry **several** classes, and then the property is a
+ * YAML list, which no equality test matches. Measured on the demo vault's generated Book view —
+ * 8 rows against 9, with *As We May Think* (`fileClass: [Book, Article]`) missing from the table
+ * of a class it belongs to. `containsAny` matches the scalar case too, verified on the same view
+ * (every single-class note kept its row), so one clause covers both.
  */
 export function fileClassFilterClause(alias: string, fileClassName: string): string {
-	return `list(${alias}).contains(${JSON.stringify(fileClassName)})`;
+	return `${alias}.containsAny(${JSON.stringify(fileClassName)})`;
+}
+
+/**
+ * What the clause above used to be, and still is in every base generated before this version.
+ *
+ * Kept so `isGeneratedScopeFilter` recognises those filters as ours: a sync then repairs them
+ * in place. Treating them as hand-written would be the worse failure — the filter that loses
+ * multi-class notes would be preserved out of politeness.
+ */
+function legacyFileClassFilterClause(alias: string, fileClassName: string): string {
+	return `${alias} == ${JSON.stringify(fileClassName)}`;
 }
 
 /**
@@ -97,41 +110,9 @@ export function fileClassViewFilter(scope: ClassScope): { and: FilterClause[] } 
 }
 
 /**
- * The property predicates an older/upstream build wrote for this class:
- * `<alias> == "<name>"`, and upstream's later `<alias>.containsAny("<name>")`.
- * Once fileClass values became wikilinks **neither** matches anything (an empty
- * table) — both test a link-valued property as if it held strings — so they are
- * recognized as **generated-and-stale**, a shape only Fileclass produces, and Sync
- * repairs them to the wikilink clause rather than leaving a permanently empty view.
- */
-function legacyClassClauses(scope: ClassScope): string[] {
-	// Both the fork's own suffixed name (`Book.fileclass`) and the bare name upstream
-	// uses (`Book`). A base written by upstream names the class the way upstream names
-	// classes, so matching only the suffixed form would leave exactly the base this is
-	// meant to repair looking hand-written — and permanently empty.
-	const names = new Set([scope.name, scope.name.replace(/\.fileclass$/, "")]);
-	const clauses: string[] = [];
-	for (const raw of names) {
-		const name = JSON.stringify(raw);
-		clauses.push(`${scope.alias} == ${name}`, `${scope.alias}.containsAny(${name})`);
-	}
-	return clauses;
-}
-
-/**
  * True when a managed view's `filters` is one Fileclass wrote and nobody edited:
- * the single class-name clause (current wikilink form, or either stale upstream
- * form: `== "name"` and `.containsAny("name")`), or an `or` group whose every clause is one Fileclass would
- * emit **for this class right now** — the class-name clause plus a folder or tag
- * predicate whose target the class currently binds. Anything else — a clause
- * naming a folder or tag the class does not bind, or any hand-added predicate —
- * marks the filter as the user's, and it is never overwritten.
- *
- * Membership-aware on purpose: matching clause *shape* alone (any `file.inFolder(`)
- * misread a user's hand-added `file.inFolder("Drafts")` as ours and silently
- * dropped it on the next Sync. A clause referencing a binding the class no longer
- * carries is left in place (Sync won't auto-prune it) — erring toward preserving
- * the user's filter over rewriting it.
+ * the legacy single property clause, or an `or` group of nothing but generated
+ * predicates. Anything else is the user's, and is never overwritten.
  */
 export function isGeneratedScopeFilter(filters: unknown, scope: ClassScope): boolean {
 	const group: unknown = (filters as { and?: unknown } | null)?.and;
@@ -139,21 +120,24 @@ export function isGeneratedScopeFilter(filters: unknown, scope: ClassScope): boo
 	// creep into a file that forbids it — hence the explicit `unknown[]` casts.
 	if (!Array.isArray(group) || (group as unknown[]).length !== 1) return false;
 	const only: unknown = (group as unknown[])[0];
-	const classClause = fileClassFilterClause(scope.alias, scope.name);
-	const legacy = legacyClassClauses(scope);
-	const isClassClause = (c: unknown): boolean =>
-		c === classClause || (typeof c === "string" && legacy.includes(c));
-	if (typeof only === "string") return isClassClause(only);
+	if (typeof only === "string") {
+		return (
+			only === fileClassFilterClause(scope.alias, scope.name) ||
+			only === legacyFileClassFilterClause(scope.alias, scope.name)
+		);
+	}
 	if (!only || typeof only !== "object" || Object.keys(only).length !== 1) return false;
 	const clauses: unknown = (only as { or?: unknown }).or;
 	if (!Array.isArray(clauses)) return false;
-	// Exactly the predicates fileClassPredicates() would emit for this scope, plus
-	// the stale upstream class-name form. Every clause must be one of these, and the
-	// class-name clause must be present (our shape always carries it) — so a filter
-	// missing it, or carrying a folder/tag/value the class does not bind, is the user's.
-	const allowed = new Set([...fileClassPredicates(scope), ...legacy]);
-	const list = clauses as unknown[];
-	return list.every((c) => typeof c === "string" && allowed.has(c)) && list.some(isClassClause);
+	const alias = escapeForRegExp(scope.alias);
+	const generated = new RegExp(
+		`^(?:${alias}\\.containsAny\\(|${alias} == |file\\.inFolder\\(|file\\.hasTag\\()`
+	);
+	return (clauses as unknown[]).every((c) => typeof c === "string" && generated.test(c));
+}
+
+function escapeForRegExp(source: string): string {
+	return source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** A managed (Fileclass) table view — native `table` or editable `fileclass-table`. */

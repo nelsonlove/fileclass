@@ -10,22 +10,13 @@ foundation (P1); typed input, editing, and computed fields come later.
 
 ## fileClass notes
 
-A fileClass is a **`.fileclass` file** — a non-Markdown format (like `.canvas`
-or `.base`), e.g. `Book.fileclass`. Its **name** is the full filename
-(`Book.fileclass`), which is also how notes link to it. fileClass files are
-discovered **anywhere in the vault** by their extension, so a definition can live
-in whatever folder its scope belongs to. There is no "class files folder" — put a
-`.fileclass` file wherever it belongs.
+A fileClass is a Markdown note whose frontmatter declares fields and options.
+Its **name** is the note's filename, and all fileClass notes live under one
+folder, set in **Settings → Fileclass → Class files folder**.
 
-A `.fileclass` file holds the same YAML you'd otherwise put in frontmatter — a
-`---`-delimited block of `fields`/`extends`/… followed by an optional description
-body. `extends` may itself be a wikilink (`extends: "[[Note.fileclass]]"`).
-
-**Create one** either way, then edit its schema in the modal that opens:
-- the command **Fileclass: create a class** — makes `<Name>.fileclass` in the
-  active file's folder (or the vault root); or
-- **right-click a folder → Fileclass → New fileClass here** — makes it in that
-  folder.
+Create one with the command **Fileclass: create a class** — it prompts for a
+name (capitalized automatically), creates the note in that folder, and opens its
+schema editor.
 
 ```yaml
 ---
@@ -99,13 +90,7 @@ A note can be bound to one or more fileClasses. When several sources apply, they
 are combined in this priority order:
 
 1. **Frontmatter alias** — the `fileClass:` key on the note (the alias is
-   configurable), whose value is a **wikilink** to the fileClass note, e.g.
-   `fileClass: "[[Book.fileclass]]"`. Accepts a single link or a list of links.
-   Links resolve the same way Obsidian resolves any `[[…]]` — folder-independent
-   and automatically rewritten when the definition is renamed or moved. A
-   fileClass in any scope can be composed with global ones by listing several:
-   `fileClass: ["[[Area.fileclass]]", "[[Task.fileclass]]"]`. Plain-text names are
-   **not** resolved — use a wikilink.
+   configurable). Accepts a single value or a list.
 2. **Tag match** — a note tag equals a fileClass's `mapWithTag` name or one of its
    `tagNames`, **or nests under one**: a note tagged `#author/french` binds to the
    class mapped on `author`, the way Obsidian's tag search and tag pane treat nested
@@ -178,18 +163,14 @@ a fileClass note changes, and emits a `fileclass:indexed` event.
 ## Adding a fileClass to a note
 
 Run the command **Fileclass: add a class to this note** and pick a
-fileClass. It writes a plain `[[<name>.fileclass]]` **wikilink** into the note's
-frontmatter (frontmatter-only, via a single `processFrontMatter` write) and then
-**inserts that class's missing fields**, so the note arrives typed and empty
-rather than bound and bare. Turn [**Insert fields when adding a class**](../settings/#behavior)
-off to keep the binding alone and insert them yourself.
+fileClass. It writes the binding into the note's frontmatter (frontmatter-only,
+via a single `processFrontMatter` write) and then **inserts that class's missing
+fields**, so the note arrives typed and empty rather than bound and bare. Turn
+[**Insert fields when adding a class**](../settings/#behavior) off to keep the
+binding alone and insert them yourself.
 
-Generated `<fileClass>.base` files filter on the linked value
-(`list(fileClass).contains("<name>")`), so a note bound by wikilink still shows
-up in its fileClass's base view.
-
-A fileClass definition can also be created from a **folder's right-click menu**
-(*New fileClass here*), not only from the command palette.
+A fileClass note can also be created from the **class-files folder's right-click
+menu** (*Create a class*), not only from the command palette.
 
 ## Creating notes with a template (Templater / Templates)
 
@@ -205,9 +186,8 @@ bake the fields into the template **once**:
 1. Create a template note and run **Add fileClass** on it — from its right-click
    menu, from **Fileclass: add a class to this note**, or from the footer of the
    note-fields modal. A template is a note, so this does there what it does
-   anywhere: it writes the binding (a wikilink, `fileClass: "[[Book.fileclass]]"`)
-   **and** every field the class declares, empty, in one go. (Templater can even
-   work `fileClass:` out dynamically.)
+   anywhere: it writes the binding **and** every field the class declares, empty,
+   in one go. (Templater can even work `fileClass:` out dynamically.)
 2. New notes created from the template now start with the binding **and all the
    fields already present** — just fill them in via the note-fields modal or the
    Properties edit buttons. No per-note command needed.

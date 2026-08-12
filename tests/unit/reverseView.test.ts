@@ -78,7 +78,7 @@ describe("the view's identity", () => {
 describe("the filter keeps the class's whole scope", () => {
 	it("is the class clause and the reverse clause", () => {
 		expect(reverseViewFilter(scope(), "author", "single")).toEqual({
-			and: ['list(fileClass).contains("Book")', "author == this.file.asLink()"],
+			and: ['fileClass.containsAny("Book")', "author == this.file.asLink()"],
 		});
 	});
 
@@ -93,7 +93,7 @@ describe("the filter keeps the class's whole scope", () => {
 		expect(filter.and).toHaveLength(2);
 		expect(filter.and[0]).toEqual({
 			or: [
-				'list(fileClass).contains("Book")',
+				'fileClass.containsAny("Book")',
 				'file.inFolder("Reading list")',
 				'file.hasTag("novel")',
 			],

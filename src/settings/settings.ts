@@ -8,6 +8,8 @@ import { UnknownKeysPosition } from "../schema/reorder";
 
 
 export interface FileclassSettings {
+	/** Folder holding fileClass notes, normalized to a trailing "/". */
+	classFilesPath: string;
 	/** Frontmatter key binding a note to its fileClass(es). */
 	fileClassAlias: string;
 	/** fileClass applied to every note that has no other binding (optional). */
@@ -89,6 +91,7 @@ export interface FileclassSettings {
 }
 
 export const DEFAULT_SETTINGS: FileclassSettings = {
+	classFilesPath: "",
 	fileClassAlias: "fileClass",
 	globalFileClass: "",
 	basesFolder: "",
@@ -142,6 +145,7 @@ export function coerceSettings(data: unknown): FileclassSettings {
 	delete (merged as Record<string, unknown>).defaultDateDisplayFormat;
 	return {
 		...merged,
+		classFilesPath: normalizeFolderPath(merged.classFilesPath),
 		basesFolder: normalizeFolderPath(merged.basesFolder),
 		customColors: Array.isArray(merged.customColors)
 			? merged.customColors.filter((c): c is string => typeof c === "string")

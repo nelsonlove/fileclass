@@ -39,10 +39,7 @@ export class FileClassOptionsModal extends Modal {
 		private readonly file: TFile
 	) {
 		super(plugin.app);
-		// `.fileclass` files are not in metadataCache; read the parsed definition
-		// from the index (kept fresh by rebuild). Reading blank here would make Save
-		// clobber the real options.
-		const parsed = plugin.index.getFileClass(name) ?? parseFileClass(name, {});
+		const parsed = parseFileClass(name, this.app.metadataCache.getFileCache(file)?.frontmatter);
 		const o = parsed.options;
 		this.opts = {
 			icon: o.icon,
@@ -445,13 +442,9 @@ export class FileClassOptionsModal extends Modal {
 	 * reader looking for it.
 	 */
 	private classFolderReason(folder: string): string | null {
-		// Upstream keeps definitions in one folder and refuses to bind it, because doing
-		// so would make every class a note of that class. This fork scatters `.fileclass`
-		// files vault-wide, so no folder is the class folder — and the same outcome is
-		// prevented at the source instead: `FileclassIndex.resolve()` never binds a
-		// definition, whatever folder it sits in. Nothing to refuse here.
-		void folder;
-		return null;
+		const classes = this.plugin.settings.classFilesPath.replace(/\/+$/, "");
+		if (!classes || folder.replace(/\/+$/, "") !== classes) return null;
+		return "Your class notes live here — binding it would make every class a note of this class.";
 	}
 
 	/** The vault's folders. The root is left out: binding it would claim every note. */

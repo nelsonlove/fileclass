@@ -421,11 +421,9 @@ export class PropertyEditButtons extends Component {
 		);
 		if (!item) return;
 
-		// From the index, not metadataCache: a `.fileclass` definition is not markdown,
-		// so Obsidian never caches its frontmatter and reading it here yields nothing —
-		// the row would say "0 fields" for a class that declares plenty.
-		const list = this.plugin.index.getFileClass(fcName)?.fields ?? [];
-		const root = list.filter((f) => !f.path).length;
+		const declared: unknown = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter?.fields;
+		const list = Array.isArray(declared) ? declared : [];
+		const root = list.filter((f) => !(f as { path?: string })?.path).length;
 		const nested = list.length - root;
 		const state = `${fcName}:${root}:${nested}`;
 		if (item.dataset.fcFields === state) return; // settled: no new mutation

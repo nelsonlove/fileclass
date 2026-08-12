@@ -13,7 +13,6 @@ import { attachRowGrid } from "./rowGridKeyboard";
 import type FileclassPlugin from "../../main";
 import { childPathOf, Field, pathFieldNames } from "../schema/field";
 import { parseFileClass } from "../schema/fileClass";
-import { INDEXED_EVENT } from "../schema/fileclassIndex";
 import { dateFormatDefaults } from "../settings/settings";
 import { mutateFields } from "../schema/fileClassIo";
 import {
@@ -40,8 +39,6 @@ export class FileClassSchemaModal extends Modal {
 	private detachGrid?: () => void;
 
 	private changeRef?: EventRef;
-	/** Signature of the rendered fields, to skip re-renders on unrelated rebuilds. */
-	private lastSig = "";
 
 	constructor(
 		private readonly plugin: FileclassPlugin,
@@ -59,36 +56,15 @@ export class FileClassSchemaModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.lastSig = this.fieldsSignature();
 		this.render();
-		// `.fileclass` files are not in metadataCache, so re-render when the index
-		// rebuilds — but INDEXED_EVENT fires vault-wide, so only re-render when *this*
-		// definition's own fields actually changed (avoids churn on unrelated edits).
-		this.changeRef = this.plugin.index.on(INDEXED_EVENT, () => {
-			const sig = this.fieldsSignature();
-			if (sig !== this.lastSig) {
-				this.lastSig = sig;
-				this.render();
-			}
+		this.changeRef = this.app.metadataCache.on("changed", (f) => {
+			if (f.path === this.file.path) this.render();
 		});
-	}
-
-	/**
-	 * What a re-render must react to: not just the rows at this level (`ownFields`),
-	 * but the whole class's fields — the breadcrumb trail is built from ancestor-group
-	 * names (`allFields` → `pathFieldNames`), so keying on `ownFields` alone skipped the
-	 * re-render when an ancestor group was renamed and left a stale crumb. `allFields`
-	 * is scoped to this class, so unrelated fileClasses still cause no churn.
-	 */
-	private fieldsSignature(): string {
-		return JSON.stringify(this.allFields());
 	}
 
 	onClose(): void {
 		this.detachGrid?.();
-		// changeRef is registered on the fork's index (onOpen), not metadataCache,
-		// because `.fileclass` files are not tracked by metadataCache.
-		if (this.changeRef) this.plugin.index.offref(this.changeRef);
+		if (this.changeRef) this.app.metadataCache.offref(this.changeRef);
 		this.contentEl.empty();
 	}
 
@@ -141,19 +117,15 @@ export class FileClassSchemaModal extends Modal {
 			);
 	}
 
-	/**
-	 * The fileClass's full field list, read from the fork's index — `.fileclass`
-	 * definitions are not tracked by metadataCache, so reading their frontmatter
-	 * there yields nothing. The index resolves both `.md` and `.fileclass` classes
-	 * uniformly. Falls back to an empty parse before the first index build.
-	 */
-	private allFields(): Field[] {
-		return (this.plugin.index.getFileClass(this.name) ?? parseFileClass(this.name, {})).fields;
+	/** Fields at the current level (root or an object's children), read fresh. */
+	private frontmatter(): Record<string, unknown> | undefined {
+		return this.app.metadataCache.getFileCache(this.file)?.frontmatter;
 	}
 
-	/** Fields at the current level (root or an object's children), from the index. */
 	private ownFields(): Field[] {
-		return this.allFields().filter((f) => f.path === this.parentPath);
+		return parseFileClass(this.name, this.frontmatter()).fields.filter(
+			(f) => f.path === this.parentPath
+		);
 	}
 
 	private render(): void {
@@ -162,7 +134,7 @@ export class FileClassSchemaModal extends Modal {
 		// "Book › publisher › headquarter › children" rather than "Book › children":
 		// two levels of nesting look identical without the trail, and the children of a
 		// group are exactly where you need to know which group you are in.
-		const trail = pathFieldNames(this.allFields(), this.parentPath);
+		const trail = pathFieldNames(parseFileClass(this.name, this.frontmatter()).fields, this.parentPath);
 		const heading = this.parentPath
 			? [this.name, ...trail, "children"].join(" › ")
 			: `Schema — ${this.name}`;

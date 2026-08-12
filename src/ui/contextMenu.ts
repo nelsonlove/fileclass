@@ -1,38 +1,27 @@
 /*
- * File / editor context menus (ARCHITECTURE.md §19.3). Adds a single "Fileclass"
- * submenu (like the Blueprint plugin) to right-click menus — on notes (field
- * actions), on `.fileclass` definitions (schema actions), and on folders (create
- * a fileClass here). All actions reuse existing modals/commands — no new write
- * path. A Component so its event listeners are torn down on plugin unload.
- *
- * NOTE — deviation from CLAUDE.md §16 ("private internals only in basesAdapter"):
- * `MenuItem.setSubmenu()` is an untyped-but-stable Obsidian *UI* API (used by many
- * plugins incl. Blueprint), not a fragile Bases internal. It is reached here via a
- * minimal `unknown` cast (SubmenuItem) and kept co-located with the menu code
- * rather than in basesAdapter (Bases-specific, runtime-proven, not to be touched).
+ * File / editor context menus (ARCHITECTURE.md §19.3). Adds Fileclass entries
+ * to right-click menus (file explorer, tab, editor). All actions reuse existing
+ * modals/commands — no new write path. A Component so its event listeners are
+ * torn down on plugin unload.
  */
-import { Component, Menu, Notice, TFile, TFolder } from "obsidian";
+import { Component, Menu, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 
 import type FileclassPlugin from "../../main";
-import { bulkInsertMissingFields } from "../commands/bulkInsertMissing";
-import { createFileClassInFolder } from "../commands/createFileClass";
+import { createFileClass } from "../commands/createFileClass";
 import { insertMissingFields } from "../commands/insertMissingFields";
-import { pickAndUpdateField } from "../fields/fieldActions";
+import { bulkInsertMissingFields } from "../commands/bulkInsertMissing";
 import { reorderFrontmatter } from "../io/reorderFrontmatter";
 import { reorderPlan } from "../schema/reorder";
+import { isClassFolder } from "../schema/classFolder";
+import { pickAndUpdateField } from "../fields/fieldActions";
 import { pickAndCreateBase } from "../views/baseFileGenerator";
+import { syncSchemaCanvas } from "../views/schemaCanvasSync";
 import { fileClassBaseFile, openFileClassBase } from "../views/baseSync";
 import { insertReverseRelation, vaultHasReverseRelations } from "../views/reverseSync";
-import { syncSchemaCanvas } from "../views/schemaCanvasSync";
 import { AddFileClassModal } from "./addFileClassModal";
 import { openBulkEdit } from "./bulkEditModal";
 import { openFileClassSchema } from "./fileClassSchemaModal";
 import { NoteFieldsModal } from "./noteFieldsModal";
-
-/** Minimal shape for the private `MenuItem.setSubmenu()` API. */
-interface SubmenuItem {
-	setSubmenu(): Menu;
-}
 
 export class FileclassContextMenu extends Component {
 	/** Guards against the editor-menu firing right after a file-menu. */
@@ -46,48 +35,60 @@ export class FileclassContextMenu extends Component {
 		this.registerEvent(
 			this.plugin.app.workspace.on("file-menu", (menu, file) => {
 				this.fileMenuOpen = true;
+				this.buildForItem(menu, file);
 				menu.onHide = () => (this.fileMenuOpen = false);
-				if (!this.plugin.settings.enableContextMenu) return;
-				if (file instanceof TFolder) this.buildFolderMenu(menu, file);
-				else if (file instanceof TFile) this.build(menu, file);
 			})
 		);
 		this.registerEvent(
 			this.plugin.app.workspace.on("editor-menu", (menu) => {
-				if (this.fileMenuOpen || !this.plugin.settings.enableContextMenu) return;
+				if (this.fileMenuOpen) return;
 				const file = this.plugin.app.workspace.getActiveFile();
-				if (file) this.build(menu, file);
+				if (file && file.extension === "md") this.build(menu, file);
 			})
 		);
 	}
 
-	/** Adds the "Fileclass" parent item and returns its submenu. */
-	private submenu(menu: Menu): Menu {
-		let sub: Menu = menu;
-		menu.addItem((item) => {
-			item.setTitle("Fileclass").setIcon("shapes");
-			sub = (item as unknown as SubmenuItem).setSubmenu();
-		});
-		return sub;
+	/** A note gets note/fileClass actions; the class folder gets "Create a class". */
+	private buildForItem(menu: Menu, item: TAbstractFile): void {
+		if (item instanceof TFile && item.extension === "md") {
+			this.build(menu, item);
+			return;
+		}
+		if (item instanceof TFolder) this.buildClassFolderMenu(menu, item);
+	}
+
+	/**
+	 * Right-clicking the folder that holds the fileClasses is the place people look
+	 * for "make me a new one" — the command palette shouldn't be the only door.
+	 */
+	private buildClassFolderMenu(menu: Menu, folder: TFolder): void {
+		if (!this.plugin.settings.enableContextMenu) return;
+		if (!isClassFolder(folder.path, this.plugin.settings.classFilesPath)) return;
+		menu.addItem((entry) =>
+			entry
+				.setTitle("Create a class")
+				.setIcon("file-spreadsheet")
+				.onClick(() => createFileClass(this.plugin))
+		);
+		// The model these classes make is not visible anywhere else (#149).
+		menu.addItem((entry) =>
+			entry
+				.setTitle("Draw the schema canvas")
+				.setIcon("git-fork")
+				.onClick(() => void syncSchemaCanvas(this.plugin))
+		);
 	}
 
 	private build(menu: Menu, file: TFile): void {
-		// A `.fileclass` definition (indexed) → schema actions; a note → field actions.
+		if (!this.plugin.settings.enableContextMenu) return;
+
+		// On a fileClass note: only schema actions. Elsewhere: only note actions.
 		const fcName = this.plugin.index.fileClassNameOfNote(file.path);
 		if (fcName) {
-			this.buildFileClassMenu(this.submenu(menu), fcName);
-		} else if (file.extension === "md") {
-			this.buildNoteMenu(this.submenu(menu), file);
+			this.buildFileClassMenu(menu, fcName);
+		} else {
+			this.buildNoteMenu(menu, file);
 		}
-	}
-
-	private buildFolderMenu(menu: Menu, folder: TFolder): void {
-		this.submenu(menu).addItem((item) =>
-			item
-				.setTitle("New fileClass here")
-				.setIcon("plus")
-				.onClick(() => createFileClassInFolder(this.plugin, folder.path))
-		);
 	}
 
 	private buildFileClassMenu(menu: Menu, fcName: string): void {
@@ -115,7 +116,7 @@ export class FileclassContextMenu extends Component {
 		menu.addItem((item) =>
 			item
 				.setTitle("Insert missing fields across this fileClass")
-				.setIcon("plus")
+				.setIcon("list-plus")
 				.onClick(() => void bulkInsertMissingFields(this.plugin, fcName))
 		);
 		menu.addItem((item) =>
@@ -123,16 +124,6 @@ export class FileclassContextMenu extends Component {
 				.setTitle("Bulk edit a field of this fileClass")
 				.setIcon("replace")
 				.onClick(() => openBulkEdit(this.plugin, fcName))
-		);
-		// The model these classes make is not visible anywhere else (#149). Upstream
-		// hangs this off the class *folder*; this fork discovers definitions vault-wide
-		// and has no such folder, so it lives on the definition itself — which is also
-		// where someone asking "how do these relate?" is already looking.
-		menu.addItem((item) =>
-			item
-				.setTitle("Draw the schema canvas")
-				.setIcon("git-fork")
-				.onClick(() => void syncSchemaCanvas(this.plugin))
 		);
 	}
 
@@ -147,7 +138,9 @@ export class FileclassContextMenu extends Component {
 			item
 				.setTitle("Update a field")
 				.setIcon("pencil")
-				.onClick(() => pickAndUpdateField(this.plugin, file, this.plugin.index.getFields(file)))
+				.onClick(() =>
+					pickAndUpdateField(this.plugin, file, this.plugin.index.getFields(file))
+				)
 		);
 		menu.addItem((item) =>
 			item
@@ -186,7 +179,7 @@ export class FileclassContextMenu extends Component {
 			);
 		}
 		// One entry per class that applies (#23). Named, not a picker: from here the
-		// answer is usually one class, and this is also the only route for a class
+		// answer is usually one class, and this is one of the two routes for a class
 		// bound by tag, path or Base view — those leave no value to click in the
 		// Properties editor. Same wrench as "Manage this fileClass" on a class note.
 		for (const name of this.plugin.index.getFileClasses(file)) {
