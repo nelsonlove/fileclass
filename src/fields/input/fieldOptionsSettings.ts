@@ -82,6 +82,17 @@ export function renderFieldOptionsSettings(
 					t.inputEl.rows = 4;
 					t.inputEl.addClass("fileclass-template-input");
 				});
+			new Setting(container)
+				.setName("Multiline")
+				.setDesc(
+					"Enter the value in a textarea instead of a single-line prompt — for prose, " +
+						"notes, or anything with line breaks. The stored value is unchanged: still one " +
+						"string, newlines included. Ignored when a template is set, since a template is " +
+						"a shape made of single-line parts."
+				)
+				.addToggle((t) =>
+					t.setValue(draft.multiline === true).onChange((v) => (draft.multiline = v))
+				);
 			return;
 		case "Duration":
 		case "CycleDuration":

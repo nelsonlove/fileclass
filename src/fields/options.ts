@@ -180,6 +180,17 @@ export function inputTemplate(field: Field): string | undefined {
 }
 
 /**
+ * Whether an `Input`/`MultiInput` value is entered in a textarea rather than a
+ * single-line prompt. Storage is unchanged — still one scalar string, newlines
+ * and all; only the widget differs. `template` wins when both are set, since a
+ * template is a shape made of single-line parts.
+ */
+export function inputMultiline(field: Field): boolean {
+	const o = asRecord(field.options);
+	return o.multiline === true;
+}
+
+/**
  * Preset durations offered as quick picks when entering a Duration/CycleDuration
  * value (#30). Stored as an array of ISO 8601 duration strings in `options.presets`.
  */

@@ -52,6 +52,7 @@ import {
 	dateOptions,
 	durationPresets,
 	iconSource,
+	inputMultiline,
 	inputTemplate,
 	numberOptions,
 } from "./options";
@@ -546,6 +547,17 @@ export async function promptFieldValue(
 					template,
 					initial: current == null ? "" : String(current),
 					onSubmit: (v) => onValue(v),
+				}).open();
+				return;
+			}
+			if (inputMultiline(field)) {
+				new TextAreaInputModal(app, {
+					title: `Set ${field.name}`,
+					initial: current == null ? "" : String(current),
+					placeholder: placeholderFor(field),
+					monospace: false,
+					validate: (v) => validateField(field, coerceInput(field, v)),
+					onSubmit: (v) => onValue(coerceInput(field, v)),
 				}).open();
 				return;
 			}

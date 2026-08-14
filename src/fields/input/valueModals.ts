@@ -130,6 +130,13 @@ export interface TextAreaOptions {
 	validate?: (value: string) => ValidationResult;
 	onSubmit: (value: string) => void;
 	/**
+	 * Monospace suits the structured editors this modal was built for (JSON/YAML),
+	 * where alignment carries meaning. Prose is not code: a multiline `Input` reads
+	 * better in the theme's own text font. Defaults to true so the structured
+	 * editors keep the look they shipped with.
+	 */
+	monospace?: boolean;
+	/**
 	 * Offers to rewrite the text in this field's own notation. Returns the converted
 	 * text, or null when there is nothing to offer — the button appears and disappears
 	 * with that answer as the text changes.
@@ -157,7 +164,10 @@ export class TextAreaInputModal extends Modal {
 		const initial = this.opts.initial ?? "";
 		input.setValue(initial).setPlaceholder(this.opts.placeholder ?? "");
 		input.inputEl.rows = 10;
-		input.inputEl.setCssStyles({ width: "100%", fontFamily: "var(--font-monospace)" });
+		input.inputEl.setCssStyles({
+			width: "100%",
+			fontFamily: this.opts.monospace === false ? "" : "var(--font-monospace)",
+		});
 		window.setTimeout(() => input.inputEl.focus(), 0);
 
 		// What the draft is compared against: what it opened on, then what was last
@@ -330,6 +340,8 @@ export interface MultiInputOptions {
 	title: string;
 	/** The field's `template` option; when set, each item uses the guided form. */
 	template?: string;
+	/** The field's `multiline` option; each item is edited in a textarea. Ignored when `template` is set. */
+	multiline?: boolean;
 	initial: string[];
 	onSubmit: (values: string[]) => void;
 }
@@ -367,6 +379,13 @@ export class MultiInputEditorModal extends Modal {
 				title,
 				template: this.opts.template,
 				initial: current,
+				onSubmit: onValue,
+			}).open();
+		} else if (this.opts.multiline) {
+			new TextAreaInputModal(this.app, {
+				title,
+				initial: current,
+				monospace: false,
 				onSubmit: onValue,
 			}).open();
 		} else {

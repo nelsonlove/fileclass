@@ -14,7 +14,7 @@ Every type name below links to the section that covers it.
 
 | Type | Stores | Input | Validation |
 |------|--------|-------|------------|
-| [**Input**](#input-templates) | text | text prompt (or a guided template) | must be scalar text |
+| [**Input**](#input-templates) | text | text prompt, a guided template, or a [textarea](#multiline-text) | must be scalar text |
 | [**MultiInput**](#multiinput--a-list-of-templated-values) | list of text | list editor (add/remove/reorder; each item plain or templated) | a list of scalar text items |
 | [**Number**](#number-fields) | number | text prompt with − / + buttons stepping by `step` | numeric; optional `min`/`max` |
 | [**Boolean**](#one-value-or-several) | true/false | toggle | boolean |
@@ -206,6 +206,33 @@ through the same guided sub-form as `Input` (placeholder controls + preview), or
 a plain prompt when no template is set. Blank items are dropped on save. Use it
 when several values share one shape — e.g. a list of repository URLs from a
 `https://github.com/{{user}}/{{repo}}/` template.
+
+## Multiline text
+
+Long values — a summary, a rationale, an abstract — are painful to enter in a
+one-line prompt: you cannot see what you already wrote, and a newline submits
+instead of wrapping. Turn on **Multiline** on an `Input` (or `MultiInput`) field
+and entry opens a resizable textarea instead.
+
+**What it changes is the widget, not the value.** The field still stores one
+scalar string, newlines included, and still validates as `Input` — nothing about
+the schema, the base column, or the written frontmatter changes. Turning the
+option off again leaves existing values exactly as they are.
+
+A few things worth knowing:
+
+- **A template wins.** If the field also has a Template, entry uses the guided
+  form — a template is a shape made of single-line parts, so the two do not
+  combine. Clear the template to get the textarea back.
+- **On a `MultiInput`**, each *item* is edited in the textarea; the list editor
+  (add / remove / reorder) is unchanged.
+- **Obsidian writes multiline values as a block scalar** (`summary: |`) when the
+  text contains newlines. That is normal YAML and reads back identically.
+- `Cmd`/`Ctrl` + `Enter` saves, so `Enter` is free to insert a line break.
+
+If instead you want *structured* free-form data — a nested object, a list of
+maps — use a `JSON` or `YAML` field: those get the same textarea plus parser
+validation as you type.
 
 ## Link fields (File / Media)
 

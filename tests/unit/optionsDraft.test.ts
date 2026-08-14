@@ -21,6 +21,38 @@ describe("Input options", () => {
 			template: "{{a}}",
 		});
 	});
+	it("round-trips the multiline option", () => {
+		const draft = optionsToDraft("Input", { multiline: true });
+		expect(draft.multiline).toBe(true);
+		expect(buildFieldOptions("Input", draft)).toEqual({ multiline: true });
+	});
+	it("omits multiline when off, rather than writing false", () => {
+		expect(buildFieldOptions("Input", { multiline: false })).toEqual({});
+		expect(optionsToDraft("Input", {}).multiline).toBe(false);
+	});
+	it("drops multiline when it is turned back off", () => {
+		const draft = optionsToDraft("Input", { multiline: true });
+		draft.multiline = false;
+		expect(buildFieldOptions("Input", draft)).toEqual({});
+	});
+	it("keeps template and multiline independent", () => {
+		const draft = optionsToDraft("Input", { template: "{{a}}", multiline: true });
+		expect(buildFieldOptions("Input", draft)).toEqual({ template: "{{a}}", multiline: true });
+	});
+	it("preserves unknown option keys through a multiline edit", () => {
+		const draft = optionsToDraft("Input", { required: true, custom: "x" });
+		draft.multiline = true;
+		expect(buildFieldOptions("Input", draft)).toEqual({
+			required: true,
+			custom: "x",
+			multiline: true,
+		});
+	});
+	it("MultiInput reuses the same multiline option handling", () => {
+		const draft = optionsToDraft("MultiInput", { multiline: true });
+		expect(draft.multiline).toBe(true);
+		expect(buildFieldOptions("MultiInput", draft)).toEqual({ multiline: true });
+	});
 	it("MultiInput reuses the same template option handling", () => {
 		const draft = optionsToDraft("MultiInput", { template: "{{a}}-{{b}}" });
 		expect(draft.template).toBe("{{a}}-{{b}}");

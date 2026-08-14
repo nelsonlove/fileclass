@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { Field, FieldOptions } from "../../src/schema/field";
-import { dateOptions, listOptions, numberOptions } from "../../src/fields/options";
+import { dateOptions, inputMultiline, listOptions, numberOptions } from "../../src/fields/options";
 import { resolveNoteFile, resolveValues } from "../../src/fields/values";
 import { displayValue } from "../../src/fields/display";
 
@@ -132,5 +132,21 @@ describe("displayValue", () => {
 		expect(displayValue(make([], "Boolean"), true)).toBe("true");
 		expect(displayValue(make([], "Input"), 5)).toBe("5");
 		expect(displayValue(make([], "Input"), undefined)).toBe("");
+	});
+});
+
+describe("inputMultiline", () => {
+	it("is true only for an explicit boolean true", () => {
+		expect(inputMultiline(make({ multiline: true }, "Input"))).toBe(true);
+		expect(inputMultiline(make({ multiline: false }, "Input"))).toBe(false);
+		expect(inputMultiline(make({}, "Input"))).toBe(false);
+	});
+
+	it("does not treat a truthy string as on", () => {
+		// Legacy definitions are hand-edited YAML; "false" is the value most likely to
+		// be written by someone expecting it to mean off, and a loose check would read
+		// it as on.
+		expect(inputMultiline(make({ multiline: "true" }, "Input"))).toBe(false);
+		expect(inputMultiline(make({ multiline: "false" }, "Input"))).toBe(false);
 	});
 });

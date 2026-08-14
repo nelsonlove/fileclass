@@ -33,6 +33,8 @@ export interface OptionsDraft {
 	// Input
 	/** Input `template` option (#27): guided composed value with placeholders. */
 	template?: string;
+	/** Input/MultiInput: enter the value in a textarea instead of a single-line prompt. */
+	multiline?: boolean;
 	/** Original Input options, so unknown keys survive a template edit. */
 	inputRawOptions?: Record<string, unknown>;
 	// Duration / CycleDuration
@@ -120,6 +122,7 @@ export function optionsToDraft(type: FieldType, options: FieldOptions): OptionsD
 		case "MultiInput":
 			return {
 				template: typeof o.template === "string" ? o.template : "",
+				multiline: o.multiline === true,
 				inputRawOptions: Array.isArray(options) ? {} : { ...o },
 			};
 		case "Duration":
@@ -226,8 +229,10 @@ export function buildFieldOptions(type: FieldType, draft: OptionsDraft): FieldOp
 			// Preserve any unknown option keys (e.g. required); only manage template.
 			const o = { ...(draft.inputRawOptions ?? {}) };
 			delete o.template;
+			delete o.multiline;
 			const tpl = draft.template?.trim();
 			if (tpl) o.template = tpl;
+			if (draft.multiline) o.multiline = true;
 			return o;
 		}
 		case "Duration":
