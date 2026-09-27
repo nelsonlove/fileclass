@@ -48,6 +48,18 @@ export interface FileclassSettings {
 	schemaLogArchives: number;
 	/** Insert a class's missing fields as soon as the class is bound to a note. */
 	insertFieldsOnBind: boolean;
+	/**
+	 * Insert only the fields a class marks `required`, and leave the optional ones to be added
+	 * when they are actually filled in.
+	 *
+	 * Off by default, because inserting every field is the point of the command for most vaults:
+	 * the empty keys are the form to fill in. It is on for the vault where an empty key is not
+	 * nothing — where another tool reads "the key is present" as a claim of its own, and a class
+	 * with forty optional fields writes forty claims into a note that asked for one class.
+	 * `required` is the only per-field switch the fileClass format already has, so the preference
+	 * needs no new syntax in a definition.
+	 */
+	insertRequiredFieldsOnly: boolean;
 	/** Open the note-fields modal on a note created with a class (#84). */
 	openFieldsOnCreate: boolean;
 	/**
@@ -128,6 +140,7 @@ export const DEFAULT_SETTINGS: FileclassSettings = {
 	schemaLogMaxEntries: 500,
 	schemaLogArchives: 5,
 	insertFieldsOnBind: true,
+	insertRequiredFieldsOnly: false,
 	openFieldsOnCreate: true,
 	reorderOnInsert: false,
 	schemaCanvasPath: "",

@@ -252,6 +252,27 @@ export class FileclassSettingTab extends PluginSettingTab {
 					})
 			);
 
+		/*
+		 * A key that is present and empty is not nothing everywhere. A vault whose own tooling
+		 * reads "the key exists" as a claim gets one claim per optional field, on every note that
+		 * binds a class; `required` is the switch the format already has, so the preference reads
+		 * the class rather than asking for new syntax in it. Off by default — inserting the whole
+		 * form is what the command is for in most vaults.
+		 */
+		new Setting(containerEl)
+			.setName("Insert only required fields")
+			.setDesc(
+				"Insert missing fields adds only the fields their class marks required, and leaves the optional ones out until you fill one in. " +
+					"Applies to every way fields are inserted — the command, the menus, the Properties button and its count, adding a class, and creating a note with one. " +
+					"Off by default: the empty keys are the form to fill in."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.insertRequiredFieldsOnly).onChange(async (value) => {
+					this.plugin.settings.insertRequiredFieldsOnly = value;
+					await this.plugin.saveSettings();
+				})
+			);
+
 		new Setting(containerEl)
 			.setName("Insert fields when adding a class")
 			.setDesc(

@@ -42,7 +42,7 @@ values — never `TFile` or field objects with methods); mutations return
 | `validate(scope?)` | schema violations for a fileClass / path / folder / vault |
 | `setValue(path, field, value)` | **validated** single write |
 | `clearValue(path, field)` | remove a field's key |
-| `insertMissing(path)` | add missing fields to a note |
+| `insertMissing(path)` | add missing fields to a note (which fields those are follows the [**Insert only required fields**](../settings/) setting, as every other insertion does) |
 | `setValueWhere(fileClass, field, value, where?)` | validated bulk write |
 
 `setValue` and `setValueWhere` validate before writing and refuse an invalid
