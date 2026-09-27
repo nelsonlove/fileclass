@@ -37,7 +37,9 @@ finding the field again; the write goes to the fileClass note that *declares* th
 field, which for an inherited one is the ancestor.
 
 Header actions: **Insert missing fields** (adds any root fields absent from the
-frontmatter) and **Add fileClass** (binds another fileClass to the note).
+frontmatter — only the `required` ones, with
+[**Insert only required fields**](../settings/) on) and **Add fileClass** (binds
+another fileClass to the note).
 
 The modal refreshes automatically as values are written, so edits made through a
 sub-modal appear immediately.

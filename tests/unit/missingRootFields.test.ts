@@ -99,11 +99,33 @@ describe("missingRootFields", () => {
 			]);
 		});
 
-		it("keeps a name one class requires and another does not, whichever is declared first", () => {
-			const optionalFirst = [field("pages"), req("pages", { id: "other", fileClassName: "Comic" })];
-			const requiredFirst = [req("pages"), field("pages", { id: "other", fileClassName: "Comic" })];
-			expect(missingRootFields(optionalFirst, none, { requiredOnly: true })).toHaveLength(1);
-			expect(missingRootFields(requiredFirst, none, { requiredOnly: true })).toHaveLength(1);
+		/*
+		 * A name one class requires and another does not is required — and the field returned is
+		 * still the first declaration, so the type deciding the empty default cannot change with
+		 * the preference. Asserted on the *type*, not the count: the count passes either way.
+		 */
+		it("requires a name one class requires, and still returns the first declaration", () => {
+			const optionalFirst = [
+				field("pages", { type: "Number" as FieldType }),
+				req("pages", { id: "other", fileClassName: "Comic" }),
+			];
+			const requiredFirst = [
+				req("pages", { type: "Number" as FieldType }),
+				field("pages", { id: "other", fileClassName: "Comic" }),
+			];
+			for (const fields of [optionalFirst, requiredFirst]) {
+				const missing = missingRootFields(fields, none, { requiredOnly: true });
+				expect(missing).toHaveLength(1);
+				expect(missing[0].id).toBe("pages");
+				expect(missing[0].type).toBe("Number");
+				// And the same field the scope-off rule picks, whatever the preference says.
+				expect(missingRootFields(fields, none, {})[0]).toEqual(missing[0]);
+			}
+		});
+
+		it("does not make a nested required field require its optional root namesake", () => {
+			const fields = [field("author"), req("author", { id: "nested", path: "book" })];
+			expect(missingRootFields(fields, none, { requiredOnly: true })).toEqual([]);
 		});
 
 		it("leaves everything in place when the scope is off", () => {

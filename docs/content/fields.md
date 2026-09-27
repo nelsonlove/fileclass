@@ -678,7 +678,9 @@ comma-separated entry).
   field's current value.
 - **Fileclass: insert missing fields in current file** — adds every root field
   of the note's fileClass(es) that isn't already in the frontmatter, each with an
-  empty default, in a single write.
+  empty default, in a single write. With
+  [**Insert only required fields**](../settings/) on, it adds only the fields
+  their class marks `required`.
 
 ## Nested fields (Object / ObjectList)
 

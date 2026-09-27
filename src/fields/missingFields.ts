@@ -37,6 +37,20 @@ export function settingsScope(): MissingFieldsScope {
 }
 
 /**
+ * `requiredOnly` asks about the **name**, not about one declaration of it: a note binding two
+ * classes that both declare `pages`, one requiring it and one not, is missing `pages`.
+ *
+ * By look-ahead rather than by skipping the optional declaration, so that the **first** declaration
+ * still decides which field is returned — and so the type behind `defaultValueFor` never depends on
+ * the preference. Skipping would hand a later class's field to the write, and `pages: 0` under one
+ * setting and `pages: ""` under the other, for the same key, is the kind of difference a preference
+ * has no business making.
+ */
+function requiredSomewhere(fields: Field[], name: string): boolean {
+	return fields.some((f) => isRootField(f) && f.name === name && isRequired(f));
+}
+
+/**
  * The root fields absent from a note, de-duplicated by name (a note may bind
  * several fileClasses sharing a field). `present` answers "does the note
  * already carry this field?" — the app-facing caller passes hasFieldKey.
@@ -51,7 +65,9 @@ export function missingRootFields(
 	const seen = new Set<string>();
 	for (const field of fields) {
 		if (!isRootField(field) || present(field) || seen.has(field.name)) continue;
-		if (scope.requiredOnly && !isRequired(field)) continue;
+		// The second pass costs a scan per candidate name, on a list of a note's own fields, and
+		// only when the preference is on. Whichever field wins is the first one either way.
+		if (scope.requiredOnly && !requiredSomewhere(fields, field.name)) continue;
 		seen.add(field.name);
 		out.push(field);
 	}
