@@ -3,10 +3,16 @@
  * Properties action button can name the count without touching the note — same
  * definition of "missing" on both sides, or the button would lie.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import type FileclassPlugin from "../../main";
 import { missingRootFields, settingsScope } from "../../src/fields/missingFields";
+import { clearPlugin, setPlugin } from "../../src/globals";
 import { Field, FieldType } from "../../src/schema/field";
+
+/** A plugin stand-in carrying nothing but the one setting the scope reads. */
+const pluginWith = (insertRequiredFieldsOnly: boolean): FileclassPlugin =>
+	({ settings: { insertRequiredFieldsOnly } }) as unknown as FileclassPlugin;
 
 const field = (name: string, extra: Partial<Field> = {}): Field =>
 	({
@@ -109,12 +115,28 @@ describe("missingRootFields", () => {
 });
 
 describe("settingsScope", () => {
+	afterEach(() => clearPlugin());
+
 	it("asks for every field when the plugin is not loaded", () => {
 		expect(settingsScope()).toEqual({ requiredOnly: false });
 	});
 
+	it("follows the preference once it is", () => {
+		setPlugin(pluginWith(true));
+		expect(settingsScope()).toEqual({ requiredOnly: true });
+		clearPlugin();
+		setPlugin(pluginWith(false));
+		expect(settingsScope()).toEqual({ requiredOnly: false });
+	});
+
+	/*
+	 * The seam that matters: the default of `missingRootFields` is this scope, so the count on the
+	 * Properties button and the write behind it cannot disagree — neither passes one.
+	 */
 	it("is what missingRootFields uses when no scope is given", () => {
 		const fields = [field("publisher"), field("title", { options: { required: true } })];
 		expect(missingRootFields(fields, none)).toHaveLength(2);
+		setPlugin(pluginWith(true));
+		expect(missingRootFields(fields, none).map((f) => f.name)).toEqual(["title"]);
 	});
 });
