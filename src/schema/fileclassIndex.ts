@@ -31,6 +31,7 @@ import {
 import {
 	chainOf,
 	classesFoldersOf,
+	classesFolderToCreate,
 	classNamesOf,
 	isFolderNote,
 	isScopeNote,
@@ -40,6 +41,7 @@ import {
 	parsePattern,
 	SCOPED_CLASS_TYPE,
 	ScopeHost,
+	scopeOfFolder,
 	scopeOfNote,
 	ScopeSettings,
 } from "./scopeChain";
@@ -60,6 +62,16 @@ const ROOT = "";
  * scope give (an error, so the name binds nothing in that scope and does not fall through).
  */
 type Layer = Map<string, string | null>;
+
+/** What a class name is read from: a note, or a note's, scope note's, class file's or folder's path. */
+export type ClassContext = TFile | string;
+
+/** One class of the index: its name, its file, and its scope ("" for the root). */
+export interface ClassEntry {
+	name: string;
+	path: string;
+	scope: string;
+}
 
 /** The binding maps the pure resolver reads, for one scope. */
 interface Bindings {
@@ -85,6 +97,10 @@ export class FileclassIndex extends Events {
 	private bindingsByScope = new Map<string, Bindings>();
 	/** Every scoped classes folder found by the last rebuild. */
 	private scopedFolders = new Set<string>();
+	/** Scope key → its chain of scope notes, nearest first (the root not included). */
+	private chainByScope = new Map<string, string[]>();
+	/** Scope key → its own classes folders. */
+	private foldersByScope = new Map<string, string[]>();
 	/** Folder → scope key, filled lazily as notes are resolved; cleared on rebuild. */
 	private folderScope = new Map<string, string | undefined>();
 	/**
@@ -156,6 +172,8 @@ export class FileclassIndex extends Events {
 		this.layersByScope.clear();
 		this.bindingsByScope.clear();
 		this.scopedFolders.clear();
+		this.chainByScope.clear();
+		this.foldersByScope.clear();
 		this.folderScope.clear();
 		this.bookmarkGroupsByPath.clear();
 		this.errors = [];
@@ -174,6 +192,7 @@ export class FileclassIndex extends Events {
 	private indexFileClassNote(file: TFile, name: string): void {
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
 		const parsed = parseFileClass(name, frontmatter);
+		for (const field of parsed.fields) field.fileClassPath = file.path;
 		this.byPath.set(file.path, parsed);
 		this.nameByPath.set(file.path, name);
 		if (parsed.errors.length) this.errors.push(...parsed.errors);
@@ -253,6 +272,7 @@ export class FileclassIndex extends Events {
 				(f) => f !== rootFolder && !f.startsWith(`${rootFolder}/`)
 			);
 			ownFolders.set(note, folders);
+			this.foldersByScope.set(note, folders);
 			for (const f of folders) this.scopedFolders.add(f);
 		}
 
@@ -282,6 +302,7 @@ export class FileclassIndex extends Events {
 			const { chain, errors: walkErrors } = chainOf(note, host, settings);
 			walkErrors.forEach((e) => errors.add(e));
 			chainLengthOf.set(note, chain.length);
+			this.chainByScope.set(note, chain);
 			const layers: Layer[] = [];
 			const visited = new Set<string>();
 			for (const scope of chain) {
@@ -569,29 +590,133 @@ export class FileclassIndex extends Events {
 	}
 
 	// -- accessors ------------------------------------------------------------
-	// A bare name means the root scope's class (§10.3); a context parameter comes with PR 2.
-	// `isFileClassNote` and `fileClassNameOfNote` are keyed by path, so they answer for a scoped
-	// class too — but its name, passed back to a bare-name accessor, means the root's class.
+	// A class name means the nearest class that gives it, up the scope chain of a context
+	// (§10.3). The context is a note (`TFile` or its path), a scope note's path, a class file's
+	// path (its own scope, so a class reads its own definition), or a folder. No context, or one
+	// that names nothing known, means the root scope — so every caller that passes a bare name
+	// keeps reading the root's class, as before.
 
+	/**
+	 * The scope key a context means: a scope note's path, or "" for the root. With scoped classes
+	 * off, always the root.
+	 */
+	scopeOf(ctx?: ClassContext): string {
+		if (!this.scoped || ctx === undefined) return ROOT;
+		const path = ctx instanceof TFile ? ctx.path : normaliseFolder(ctx);
+		if (!path) return ROOT;
+		if (this.layersByScope.has(path)) return path;
+		// A class reads from its own scope, wherever its file sits.
+		const owner = this.scopeOfClass.get(path);
+		if (owner !== undefined) return owner;
+		const file = ctx instanceof TFile ? ctx : this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) return this.scopeKeyOf(file);
+		if (file instanceof TFolder) {
+			const note = scopeOfFolder(path, this.scopeHost(), this.scopeSettings(), this.folderScope);
+			return note && this.layersByScope.has(note) ? note : ROOT;
+		}
+		return ROOT;
+	}
+
+	/** The scopes a context sees, nearest first, the root ("") last. */
+	chainOf(ctx?: ClassContext): string[] {
+		const scope = this.scopeOf(ctx);
+		return scope === ROOT ? [ROOT] : [...(this.chainByScope.get(scope) ?? [scope]), ROOT];
+	}
+
+	/** True when a context names a scope, a note, a class or a folder the index knows. */
+	knowsContext(ctx: string): boolean {
+		const path = normaliseFolder(ctx);
+		return (
+			!path ||
+			this.layersByScope.has(path) ||
+			this.scopeOfClass.has(path) ||
+			this.app.vault.getAbstractFileByPath(path) !== null
+		);
+	}
+
+	/** The class file a name means from a context, or undefined. */
+	resolveClass(name: string, ctx?: ClassContext): string | undefined {
+		return this.lookup(this.scopeOf(ctx), name);
+	}
+
+	/**
+	 * The class an `extends` name means for a class file: read from the class's own scope upward,
+	 * never the class itself, so a scope's class may extend the class it shadows.
+	 */
+	resolveParent(name: string, classPath: string): string | undefined {
+		return this.lookup(this.scopeOfClass.get(classPath) ?? ROOT, name, classPath);
+	}
+
+	/** The root scope's class names. */
 	get fileClassNames(): string[] {
 		return [...this.pathByName.keys()];
 	}
 
-	getFileClass(name: string): ParsedFileClass | undefined {
-		const path = this.pathByName.get(name);
+	/** The class names a context can see: its scopes' and the root's, a shadowed name once. */
+	fileClassNamesFor(ctx?: ClassContext): string[] {
+		const scope = this.scopeOf(ctx);
+		if (scope === ROOT) return this.fileClassNames;
+		const names = new Set<string>();
+		for (const layer of this.layersByScope.get(scope) ?? []) {
+			for (const name of layer.keys()) {
+				if (this.lookup(scope, name) !== undefined) names.add(name);
+			}
+		}
+		return [...names];
+	}
+
+	/**
+	 * Every class the index holds, root and scoped, with its file and scope ("" for the root). A
+	 * class whose name two files of one scope give is not listed: it binds nothing.
+	 */
+	allClasses(): ClassEntry[] {
+		const out: ClassEntry[] = [];
+		for (const [path, name] of this.nameByPath) {
+			const scope = this.scopeOfClass.get(path) ?? ROOT;
+			if (this.lookup(scope, name) !== path) continue;
+			out.push({ name, path, scope });
+		}
+		return out;
+	}
+
+	getFileClass(name: string, ctx?: ClassContext): ParsedFileClass | undefined {
+		const path = this.resolveClass(name, ctx);
 		return path ? this.byPath.get(path) : undefined;
 	}
 
-	getAncestors(name: string): string[] {
-		const path = this.pathByName.get(name);
-		const ancestors = path ? this.ancestorsByPath.get(path) ?? [] : [];
-		return ancestors.map((p) => this.nameByPath.get(p) ?? p);
+	/** The parsed class of a class file path. */
+	getFileClassByPath(path: string): ParsedFileClass | undefined {
+		return this.byPath.get(path);
+	}
+
+	/** The ancestors' class files of a class file, nearest first. */
+	ancestorPathsOf(classPath: string): string[] {
+		return this.ancestorsByPath.get(classPath) ?? [];
+	}
+
+	/** The resolved fields of a class file. */
+	resolvedFieldsOf(classPath: string): Field[] {
+		return this.fieldsByPath.get(classPath) ?? [];
+	}
+
+	/** The names of a class's ancestors, nearest first. */
+	getAncestors(name: string, ctx?: ClassContext): string[] {
+		return this.getAncestorPaths(name, ctx).map((p) => this.nameByPath.get(p) ?? p);
+	}
+
+	/**
+	 * The class files of a class's ancestors, nearest first. A parent that names no class stays
+	 * as its bare name, as `getAncestors` has always shown it.
+	 */
+	getAncestorPaths(name: string, ctx?: ClassContext): string[] {
+		const path = this.resolveClass(name, ctx);
+		return path ? this.ancestorsByPath.get(path) ?? [] : [];
 	}
 
 	/** Resolved Lucide icon name for a fileClass: its own `icon`, else an
 	 * ancestor's, else the configured default. */
-	resolveIcon(name: string): string {
-		const path = this.pathByName.get(name);
+	resolveIcon(name: string, ctx?: ClassContext): string {
+		const path = this.resolveClass(name, ctx);
 		const chain = path ? [path, ...(this.ancestorsByPath.get(path) ?? [])] : [];
 		for (const cls of chain) {
 			const icon = this.byPath.get(cls)?.options.icon;
@@ -603,12 +728,23 @@ export class FileclassIndex extends Events {
 	/** Icon for a note, from its primary (first-bound) fileClass. */
 	iconForFile(file: TFile): string {
 		const names = this.getFileClasses(file);
-		return names.length ? this.resolveIcon(names[0]) : this.host.settings.fileClassIcon;
+		return names.length ? this.resolveIcon(names[0], file) : this.host.settings.fileClassIcon;
 	}
 
-	getResolvedFields(name: string): Field[] {
-		const path = this.pathByName.get(name);
+	getResolvedFields(name: string, ctx?: ClassContext): Field[] {
+		const path = this.resolveClass(name, ctx);
 		return path ? this.fieldsByPath.get(path) ?? [] : [];
+	}
+
+	/**
+	 * True when a note carries the class a name means from a context: the note binds the name and,
+	 * from the note's own scope, the name means the same file. A note in a scope that shadows the
+	 * name carries the shadow, not the class asked for.
+	 */
+	bindsClass(file: TFile, name: string, ctx?: ClassContext): boolean {
+		const target = this.resolveClass(name, ctx);
+		if (!target || !this.getFileClasses(file).includes(name)) return false;
+		return this.resolveClass(name, file) === target;
 	}
 
 	/** True when `path` is a fileClass note (under a class-files folder). */
@@ -621,14 +757,54 @@ export class FileclassIndex extends Events {
 		return this.nameByPath.get(path);
 	}
 
-	/** The Markdown note backing a fileClass, from the index (falling back to the conventional path) */
-	getFileClassFile(name: string): TFile | null {
-		const path = this.pathByName.get(name);
+	/** The scope a class file belongs to ("" for the root), if it is one. */
+	scopeOfClassFile(path: string): string | undefined {
+		return this.scopeOfClass.get(path);
+	}
+
+	/** The classes folders of a scope: `classFilesPath` for the root, its own folders otherwise. */
+	classesFoldersOfScope(scope: string): string[] {
+		if (scope === ROOT) {
+			const root = normaliseFolder(this.host.settings.classFilesPath);
+			return this.host.settings.classFilesPath ? [root] : [];
+		}
+		return this.foldersByScope.get(scope) ?? [];
+	}
+
+	/**
+	 * The folder a new class of a scope goes in: the root's `classFilesPath`, or the scope's first
+	 * classes folder, or the one its pattern would name when it does not exist yet.
+	 */
+	classesFolderForNewClass(scope: string): string | undefined {
+		if (scope === ROOT) {
+			const root = this.host.settings.classFilesPath;
+			return root ? normaliseFolder(root) : undefined;
+		}
+		const { segments } = parsePattern(this.host.settings.scopedClassesPattern);
+		return classesFolderToCreate(scope, this.scopeHost(), this.scopeSettings(), segments);
+	}
+
+	/** Every scoped classes folder the last rebuild found. */
+	scopedClassesFolders(): string[] {
+		return [...this.scopedFolders];
+	}
+
+	/** Every scope note the index knows (the root excluded). */
+	get scopeNotes(): string[] {
+		return [...this.layersByScope.keys()].filter((k) => k !== ROOT);
+	}
+
+	/**
+	 * The Markdown note backing a fileClass. A root name not indexed yet (a class created before
+	 * the debounced rebuild fired) falls back to the root folder's conventional path.
+	 */
+	getFileClassFile(name: string, ctx?: ClassContext): TFile | null {
+		const path = this.resolveClass(name, ctx);
 		if (path) {
 			const file = this.app.vault.getFileByPath(path);
 			if (file instanceof TFile) return file;
 		}
-		// Not indexed yet (class created before the debounced rebuild fired).
+		if (this.scopeOf(ctx) !== ROOT) return null;
 		const folder = this.host.settings.classFilesPath;
 		if (!folder) return null;
 		const file = this.app.vault.getFileByPath(`${folder}${name}.md`);
