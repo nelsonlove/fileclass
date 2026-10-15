@@ -28,3 +28,8 @@ export function getAllTags(cache: { frontmatter?: { tags?: unknown } }): string[
 	const tags = cache.frontmatter?.tags;
 	return Array.isArray(tags) ? tags.map((t) => `#${String(t)}`) : [];
 }
+
+/** A notice says something to the reader; a unit test has no reader. */
+export class Notice {
+	constructor(_message?: string, _timeout?: number) {}
+}
