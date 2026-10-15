@@ -10,7 +10,7 @@
  */
 import { areaDigit, normaliseFolder, parentFolder } from "../schema/scopeChain";
 
-/** The `.07` slot of a scope: a child folder named like `85.07 Views`. */
+/** The `.07` slot of a scope: a child folder named like `75.07 Views`. */
 const VIEWS_SLOT = /^\d\d\.07 /;
 
 /** The folder below the `.07` slot that holds generated bases. */

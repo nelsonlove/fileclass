@@ -9,7 +9,7 @@ import { ChoiceSuggestModal } from "../fields/input/valueModals";
 import type { ClassEntry } from "../schema/fileclassIndex";
 import { parentFolder } from "../schema/scopeChain";
 
-/** `Visit` for a root class, `Visit — 80-89 Divorce` for a scoped one. */
+/** `Score` for a root class, `Score — 70-79 Hobbies` for a scoped one. */
 export function classLabel(entry: ClassEntry): string {
 	return entry.scope ? `${entry.name} — ${parentFolder(entry.scope) || entry.scope}` : entry.name;
 }

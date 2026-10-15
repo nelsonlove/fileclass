@@ -13,8 +13,8 @@ const vault = new FakeVault(
 		"40 F/40.07 Views/bases/generated/generated.md": {},
 		"41 G/41 G.md": {},
 		"41 G/41.07 Views/41.07 Views.md": {},
-		"80-89 D/80-89 D.md": {},
-		"80-89 D/80 M/80.07 Views/bases/generated/x.md": {},
+		"70-79 H/70-79 H.md": {},
+		"70-79 H/70 M/70.07 Views/bases/generated/x.md": {},
 	},
 	[]
 );
@@ -31,15 +31,15 @@ describe("defaultBasePath", () => {
 			"40 F/40.07 Views/bases/generated/Ledger.base"
 		);
 		expect(defaultBasePath({ name: "Ledger", basesFolder: "Bases/", scopeFolder: "41 G" }, host)).toBe("");
-		expect(defaultBasePath({ name: "Event/Visit", basesFolder: "Bases/", scopeFolder: "80-89 D" }, host)).toBe(
-			"80-89 D/80 M/80.07 Views/bases/generated/Event/Visit.base"
+		expect(defaultBasePath({ name: "Event/Session", basesFolder: "Bases/", scopeFolder: "70-79 H" }, host)).toBe(
+			"70-79 H/70 M/70.07 Views/bases/generated/Event/Session.base"
 		);
 		// Declared wins for a scoped class too.
 		expect(defaultBasePath({ name: "L", basesFolder: "Bases/", scopeFolder: "41 G", declared: "A.base" }, host)).toBe("A.base");
 	});
 
 	it("an area uses its management category's slot", () => {
-		expect(generatedBasesFolder("80-89 D", host)).toBe("80-89 D/80 M/80.07 Views/bases/generated");
+		expect(generatedBasesFolder("70-79 H", host)).toBe("70-79 H/70 M/70.07 Views/bases/generated");
 		expect(generatedBasesFolder("", host)).toBeUndefined();
 	});
 });

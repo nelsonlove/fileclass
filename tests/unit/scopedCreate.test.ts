@@ -77,27 +77,27 @@ describe("Create a class", () => {
 
 	it("an area's class goes to its management category's folder", () => {
 		const { plugin } = pluginOver(true);
-		const area = scopeChoices(plugin).find((c) => c.scope === "80-89 D/80-89 D.md");
-		expect(area?.folder).toBe("80-89 D/80 M/80.03 Shapes/classes");
+		const area = scopeChoices(plugin).find((c) => c.scope === "70-79 H/70-79 H.md");
+		expect(area?.folder).toBe("70-79 H/70 M/70.03 Shapes/classes");
 	});
 
 	it("a classes folder's own menu skips the question", async () => {
 		const { plugin, created } = pluginOver(true);
-		createFileClass(plugin, { folder: "80-89 D/80 M/80.03 Shapes/classes" });
+		createFileClass(plugin, { folder: "70-79 H/70 M/70.03 Shapes/classes" });
 		expect(asked.choice).toBeUndefined();
-		asked.prompt?.onSubmit("Hearing");
+		asked.prompt?.onSubmit("Recital");
 		await flush();
-		expect(created[0].path).toBe("80-89 D/80 M/80.03 Shapes/classes/Hearing.md");
+		expect(created[0].path).toBe("70-79 H/70 M/70.03 Shapes/classes/Recital.md");
 		expect(created[0].data).toContain("type: Meta/Fileclass");
 	});
 
 	it("an existing class is opened, never overwritten", async () => {
 		const { plugin, created } = pluginOver(true);
-		createFileClass(plugin, { folder: "80-89 D/80 M/80.03 Shapes/classes" });
-		asked.prompt?.onSubmit("case");
+		createFileClass(plugin, { folder: "70-79 H/70 M/70.03 Shapes/classes" });
+		asked.prompt?.onSubmit("score");
 		await flush();
 		expect(created).toEqual([]);
-		expect(opened).toEqual(["80-89 D/80 M/80.03 Shapes/classes/Case.md"]);
+		expect(opened).toEqual(["70-79 H/70 M/70.03 Shapes/classes/Score.md"]);
 	});
 
 	it("the type key is the configured one", () => {

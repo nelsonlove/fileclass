@@ -222,13 +222,17 @@ describe("patterns and links", () => {
 });
 
 describe("classesFolderToCreate", () => {
-	it("an existing classes folder first", () => {
-		const v = vault();
-		expect(classesFolderToCreate("80-89 Divorce/80 Management/80 Management.md", v.host(), settings, segments)).toBe(
-			"80-89 Divorce/80 Management/80.03 Shapes/classes"
+	it("an existing classes folder first; an area's is its management category's", () => {
+		const v = new FakeVault({
+			"70-79 Hobbies/70-79 Hobbies.md": { type: "Meta/Scope/Area" },
+			"70-79 Hobbies/70 Management/70 Management.md": { type: "Meta/Scope/Category" },
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes/classes.md": {},
+		});
+		expect(classesFolderToCreate("70-79 Hobbies/70 Management/70 Management.md", v.host(), settings, segments)).toBe(
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes"
 		);
-		expect(classesFolderToCreate("80-89 Divorce/80-89 Divorce.md", v.host(), settings, segments)).toBe(
-			"80-89 Divorce/80 Management/80.03 Shapes/classes"
+		expect(classesFolderToCreate("70-79 Hobbies/70-79 Hobbies.md", v.host(), settings, segments)).toBe(
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes"
 		);
 	});
 
