@@ -13,6 +13,7 @@ import { Notice, TFile, TFolder } from "obsidian";
 import type FileclassPlugin from "../../main";
 import { LogEntry, logStamp } from "../log/logLine";
 import { logEvents, readSchemaLog } from "../log/schemaLog";
+import { classRef } from "./classRef";
 import { isRootField } from "./field";
 import {
 	AuditWorld,
@@ -29,6 +30,7 @@ import {
 interface AuditedEntry {
 	cls: AuditedClass;
 	path: string;
+	scope: string;
 }
 
 /**
@@ -40,11 +42,12 @@ function auditedClasses(plugin: FileclassPlugin): AuditedEntry[] {
 	const entries = plugin.index.allClasses();
 	// The root's first, in the index's own order: a vault with no scopes reports as it always did.
 	const ordered = [...entries.filter((e) => e.scope === ""), ...entries.filter((e) => e.scope !== "")];
-	for (const { name, path } of ordered) {
+	for (const { name, path, scope } of ordered) {
 		const parsed = plugin.index.getFileClassByPath(path);
 		if (!parsed) continue;
 		out.push({
 			path,
+			scope,
 			cls: {
 				name,
 				extends: parsed.options.extends,
@@ -72,9 +75,12 @@ function auditedClasses(plugin: FileclassPlugin): AuditedEntry[] {
  * The vault as one class sees it: `extends` resolves from the class's own scope upward (§10.3), so
  * the names it may extend are those its scope sees.
  */
-function world(plugin: FileclassPlugin, classPath: string): AuditWorld {
+function world(plugin: FileclassPlugin, classPath: string, name: string, scope: string): AuditWorld {
 	const index = plugin.index;
 	const reachable = new Set(index.fileClassNamesFor(classPath));
+	// A scoped class never extends itself: its own name reaches a class only further up. (A root
+	// class keeps today's reading, where naming itself is not a missing parent.)
+	if (scope && !index.resolveParent(name, classPath)) reachable.delete(name);
 	return {
 		fileExists: (path) => plugin.app.vault.getAbstractFileByPath(path) instanceof TFile,
 		folderExists: (path) => plugin.app.vault.getAbstractFileByPath(path) instanceof TFolder,
@@ -92,7 +98,13 @@ function world(plugin: FileclassPlugin, classPath: string): AuditWorld {
 
 /** Every problem the vault's schemas have right now. */
 export function auditSchemas(plugin: FileclassPlugin): Finding[] {
-	return auditedClasses(plugin).flatMap(({ cls, path }) => auditClass(cls, world(plugin, path)));
+	return auditedClasses(plugin).flatMap(({ cls, path, scope }) => {
+		const findings = auditClass(cls, world(plugin, path, cls.name, scope));
+		// A scoped class is named with its file, so two classes of one name are two problems in the
+		// log, each logged and resolved on its own (§10.3). A root class keeps its bare name.
+		const ref = classRef(cls.name, path, scope);
+		return ref === cls.name ? findings : findings.map((f) => ({ ...f, fileClass: ref }));
+	});
 }
 
 /**

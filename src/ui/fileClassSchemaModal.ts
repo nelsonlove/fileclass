@@ -197,7 +197,8 @@ export class FileClassSchemaModal extends Modal {
 						.setTooltip(`Edit this field where it is declared`)
 						.onClick(() => {
 							this.close();
-							openFileClassSchema(this.plugin, field.fileClassName);
+							// Where it is declared: by file, since a scope's class may share its name (§10.3).
+							openFileClassSchema(this.plugin, field.fileClassName, undefined, field.fileClassPath);
 						})
 				);
 				return;

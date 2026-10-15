@@ -223,7 +223,7 @@ export async function createNoteWithClass(
 	// the class's own setting, or the reader's default, and either may be on purpose.
 	if (classPath && plugin.index.resolveClass(req.fileClass, target) !== classPath) {
 		new Notice(
-			`Fileclass: ${target.path} is outside the scope of ${classPath}, so there "${req.fileClass}" means another class or none.`,
+			`Fileclass: at ${target.path}, "${req.fileClass}" means another class or none, not ${classPath} — the note sits outside that class's scope, or in a scope with its own "${req.fileClass}".`,
 			10000
 		);
 	}

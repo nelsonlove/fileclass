@@ -13,6 +13,7 @@ import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type FileclassPlugin from "../../main";
 import { logStamp } from "../log/logLine";
 import { logEvents } from "../log/schemaLog";
+import { classRef } from "./classRef";
 import {
 	RenameEvent,
 	StaleReference,
@@ -29,14 +30,16 @@ export function warnOnStalePaths(plugin: FileclassPlugin, file: TAbstractFile, o
 
 	const found: { label: string; ref: StaleReference }[] = [];
 	// Every class, scoped ones included (§10.3): each stores its paths as plain strings.
-	for (const { name, path } of plugin.index.allClasses()) {
+	for (const { name, path, scope } of plugin.index.allClasses()) {
 		const note = plugin.app.vault.getFileByPath(path);
 		if (!(note instanceof TFile)) continue;
 		// The renamed file being a class note is the index's business, not this warning's.
 		if (note.path === ev.newPath) continue;
 		const fm = plugin.app.metadataCache.getFileCache(note)?.frontmatter;
 		if (!fm) continue;
-		for (const ref of staleReferences(fm, ev)) found.push({ label: referenceLabel(name, ref), ref });
+		// A scoped class is named with its file, so the log line reopens the right one (classRef.ts).
+		const who = classRef(name, path, scope);
+		for (const ref of staleReferences(fm, ev)) found.push({ label: referenceLabel(who, ref), ref });
 	}
 
 	if (!found.length) return;

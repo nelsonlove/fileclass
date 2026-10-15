@@ -320,7 +320,7 @@ export class PropertyEditButtons extends Component {
 			.filter((f) => isRootField(f))
 			.map((f) => f.name)
 			.join(",");
-		const state = `class:${fcName}:${base?.path ?? ""}:${shape}`;
+		const state = `class:${ctx}:${fcName}:${base?.path ?? ""}:${shape}`;
 		if (existing?.dataset.fcState === state) return;
 		existing?.remove();
 
@@ -755,10 +755,14 @@ export class PropertyEditButtons extends Component {
 			existing?.remove();
 			return;
 		}
-		if (existing?.dataset.fcName === name) return;
+		// The note is part of the button's identity: Obsidian recycles the row across notes, and the
+		// click reads the name from this note's scope (§10.3).
+		const owner = ctx?.path ?? "";
+		if (existing?.dataset.fcName === name && existing.dataset.fcFile === owner) return;
 		existing?.remove();
 		const btn = createSpan({ cls: `${CLASS_CLASS} clickable-icon` });
 		btn.dataset.fcName = name;
+		btn.dataset.fcFile = owner;
 		btn.setAttribute("aria-label", `Fileclass: Open "${name}" schema`);
 		setIcon(btn, "wrench");
 		btn.addEventListener("click", (e) => {

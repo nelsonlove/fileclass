@@ -326,17 +326,17 @@ class FileclassTableView extends Component {
 		);
 	}
 
+	/** The file of a toolbar class, as the table found it; none means the root's. */
+	private classCtx(name: string): string | undefined {
+		return this.toolbarClassPaths.get(name);
+	}
+
 	/**
 	 * Runs `use` with the class this table is about, asking when there is more than one.
 	 *
 	 * A table filtered on `containsAny("Book", "Comic")` is about both, and neither button should
 	 * vanish for it: the question "which one" is one click, where a missing button is a dead end.
 	 */
-	/** The file of a toolbar class, as the table found it; none means the root's. */
-	private classCtx(name: string): string | undefined {
-		return this.toolbarClassPaths.get(name);
-	}
-
 	private withClass(use: (fileClass: string) => void): void {
 		const candidates = this.toolbarClasses;
 		if (candidates.length === 1) {

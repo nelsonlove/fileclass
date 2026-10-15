@@ -5,8 +5,9 @@
  * A root class keeps today's default: its declared `baseFile`, else `<basesFolder><name>.base`. A
  * scoped class has no default in the root's bases folder: a scope's generated bases belong to the
  * scope, so the modal offers `<scope>/<NN>.07 …/bases/generated/<name>.base` when that folder
- * exists, and nothing otherwise. A base is never written beside a class, in a classes folder:
- * there it would sit among the definitions it describes.
+ * exists, and nothing otherwise. A scoped class's base is never written in a classes folder: there
+ * it would sit among the definitions it describes. (A root class keeps today's freedom; the
+ * refusal is baseFileGenerator.ts's.)
  */
 import { areaDigit, normaliseFolder, parentFolder } from "../schema/scopeChain";
 
