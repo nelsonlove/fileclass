@@ -64,10 +64,14 @@ export function defaultBasePath(input: DefaultBasePathInput, host: BaseFolderHos
 	return generated ? `${generated}/${input.name}.base` : "";
 }
 
-/** True when a base path sits in one of the classes folders, at any depth. */
+/**
+ * True when a base path sits in one of the classes folders, at any depth. A blank entry (no class
+ * files folder set, or the vault root) names no folder to keep clear, so it refuses nothing.
+ */
 export function isBesideClasses(basePath: string, classesFolders: string[]): boolean {
 	const folder = parentFolder(normaliseFolder(basePath));
 	return classesFolders
 		.map(normaliseFolder)
-		.some((c) => folder === c || (c !== "" && folder.startsWith(`${c}/`)));
+		.filter((c) => c !== "")
+		.some((c) => folder === c || folder.startsWith(`${c}/`));
 }
