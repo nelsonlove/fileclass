@@ -113,6 +113,12 @@ fileclass validate --fileclass Book
 fileclass set-where Book status "to read" --where "status isEmpty" --apply
 ```
 
+With [scoped classes](../schema/#scoped-classes), `fileclasses`, `schema`, `list`,
+`validate --fileclass` and `set-where` take `--scope <path>` (a scope note, a note,
+a class file or a folder) to say where a class name is read from; without it a
+name means the root's class. The flag lives in the `fileclass-cli` repository and
+needs plugin API 1.2.
+
 Add `--json` to any command for machine-readable output. `validate` exits
 non-zero when it finds a violation, so it drops straight into a CI or pre-commit
 check.
