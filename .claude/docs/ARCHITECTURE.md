@@ -466,6 +466,17 @@ canvas file tracking (comes with the planned Canvas engine, §9.1).
   base — and the only route available, since the registry takes no computed
   properties (§3.1).
 
+### 10.3 Scoped classes (`scopeChain.ts`, behind `enableScopedClasses`)
+
+Decided on the vault owner's ruling of 2026-10-15 (cascading resolution). A scope (a folder with a scope note: a folder note whose class is `scopeClass` or extends it) may keep classes in its own classes folder; a class name means the nearest class that gives it, up the scope chain, `classFilesPath` last.
+
+- **Identity is the class file path**, not the name. The index keys `byPath`, ancestors and resolved fields by path; a scope's lookup is a list of layers (name → path), nearest first, the root's last. The bare-name accessors (`getFileClass`, `getResolvedFields`, `getAncestors`, `fileClassNames`, `getFileClassFile`) mean the **root's** class; a context parameter is the next PR.
+- **`registry(file)` is chain-bound**, so `resolver.ts` is unchanged: `has`/`fieldsOf` look the name up in the file's scope, and the tag/path/bookmark maps hold only the classes visible there (farthest first, so a nearer class wins inside its scope and reaches nothing outside).
+- **`extends` resolves from the class's own scope upward, skipping the class itself**, so a shadow may extend what it shadows. The cycle guard is the existing one, on paths.
+- **Errors, never silence:** a shadow, one name twice in one scope (neither binds, no fall through), a stray note in a scoped folder, and a broken chain (unresolved link, non-scope target, cycle, depth over 16) each go to `errors`.
+- **Off means the old index**: with the setting off the root layer is the only layer and the binding maps are built in the same order as before. Pinned by `scopedIndex.test.ts`, which also checks that turning it on changes no note outside a shadowing scope.
+- `scopeChain.ts` is pure behind a `ScopeHost`; `tests/unit/stubs/obsidian.ts` (aliased in `vitest.config.ts`) gives the index tests the four runtime names they need.
+
 ### 10.1 Paths a schema stores, when they move (#159, `renamePaths.ts` / `renameNotice.ts`)
 
 A fileClass stores paths as **plain strings** in frontmatter: `valuesListNotePath`,

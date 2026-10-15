@@ -45,6 +45,24 @@ load as-is. Legacy Dataview-era options (`dvQueryString`, `customRendering`, …
 are ignored (they never crash the index); new link fields use a `.base` file +
 view instead.
 
+## Scoped classes
+
+Off by default. Turn on **Settings → Fileclass → Scoped classes** and a **scope** — a folder with a scope note — may keep its own classes beside its notes. A class name keeps its short form (`Event/Visit`); the note's place says which file that name means.
+
+**What a scope is.** A folder note (the note named like its folder, `85 Evidence/85 Evidence.md`) whose class is the **scope class** (`Meta/Scope` by default) or a class that extends it. A note's scope is the nearest folder, from its own upward, holding a scope note. A note may name another scope with a `scope:` link to a scope note; free text in `scope:` is ignored.
+
+**The chain.** From a scope note, the **parent scope key** (`up` by default) is a link to the parent scope, and so on upward. A class name a note carries is looked up in its scope's classes, then the parent's, and so on; the **class files folder** is always the last step, so a gap in `up` is never fatal. The walk stops, and says so in the index's errors, on a link that resolves to nothing, a target that is not a scope note, a cycle, or a chain deeper than 16.
+
+**Where a scope keeps its classes.** Below its folder, where the **scoped classes pattern** says: folder names separated by `/`, each a regular expression matched whole. The default, `\d\d\.03 .*/classes`, means `85 Evidence/85.03 Shapes/classes/`. An area folder (named like `80-89 Divorce`) has no such slot of its own, so it uses its management category's (`80 Management/80.03 Shapes/classes/`), and every note of the area sees those classes. A scope note may name its folder, or a list of folders, with the **scoped classes key** (`classes` by default) instead. In a scoped folder only a note whose class is `Meta/Fileclass` is a class; the folder's own folder note is skipped, and any other note is reported. A class's name is its path below the folder, without `.md`.
+
+**Shadowing.** A scope's class with the same name as one further up wins for the notes of that scope, and the index reports it (`Event/Visit in … shadows Event/Visit in …`). Such a class may `extends` the class it shadows: a class never extends itself, so its own name resolves further up. `extends` always resolves from the class's own scope upward, never sideways or down.
+
+**Two files, one name, one scope.** When a scope's folders give one name twice, neither binds in that scope (the name does not fall through to a parent's class), and the index reports it.
+
+**Tags, folders and bookmarks.** A scoped class's `mapWithTag`, `tagNames`, `filesPaths` and `bookmarksGroups` claim only notes inside its scope. The root's classes claim what they always claimed.
+
+**What does not change yet.** With the setting on, every root class binds the notes it bound before, unless a scope shadows its name. The accessors that take a bare class name (the schema editor, the bulk edit, the API and the CLI) still mean the root's class; a scope parameter on them is the next step.
+
 ## Fields
 
 {{< video "002" >}}
