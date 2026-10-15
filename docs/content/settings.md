@@ -13,6 +13,11 @@ All settings live under **Settings → Fileclass**.
 |---------|--------------|
 | **Class files folder** | Folder holding your fileClass notes. Any note here defines a fileClass (its name = the filename). |
 | **fileClass alias** | Frontmatter key that binds a note to its fileClass(es). Default `fileClass`. |
+| **Scoped classes** | Also read classes kept in each scope's own folder; a class name is looked up in the note's scope, then its parent scope, the class files folder last. Off by default; the four settings below it are shown only when it is on. See [Scoped classes](../schema/#scoped-classes). |
+| **Scope class** | The class a scope note carries, or a class that extends it. Default `Meta/Scope`. |
+| **Parent scope key** | The link property a scope note names its parent scope with. Default `up`. |
+| **Scoped classes pattern** | Where a scope keeps its classes, below its folder: folder-name expressions separated by `/`. Default `\d\d\.03 .*/classes`. |
+| **Scoped classes key** | A property on a scope note that names its classes folder (or a list) instead of the pattern. Default `classes`. |
 | **Global fileClass** | A baseline carried by **every** note, on top of whatever classes it names itself; the note's own class wins any key both declare. Not applied to the class folder, whose notes declare classes rather than use them. Leave empty to disable. |
 | **Bases folder** | Where generated `<fileClass>.base` files are written. |
 | **fileClass icon** | Default icon for a fileClass without an explicit `icon` (each fileClass can override it, with a live preview + Lucide picker in its options). |

@@ -12,6 +12,22 @@ export interface FileclassSettings {
 	classFilesPath: string;
 	/** Frontmatter key binding a note to its fileClass(es). */
 	fileClassAlias: string;
+	/**
+	 * Read classes kept in each scope's own folder, beside the root's (§10.3). Off by default:
+	 * with it off the index reads `classFilesPath` alone, as it always has.
+	 */
+	enableScopedClasses: boolean;
+	/** The link key a scope note names its parent scope with. */
+	scopeParentKey: string;
+	/** The class a scope note carries, or a class extending it. */
+	scopeClass: string;
+	/**
+	 * Where a scope keeps its classes, below its folder: `/`-separated folder-name expressions,
+	 * each matched whole.
+	 */
+	scopedClassesPattern: string;
+	/** The key a scope note may name its own classes folder(s) with, instead of the pattern. */
+	scopedClassesKey: string;
 	/** fileClass applied to every note that has no other binding (optional). */
 	globalFileClass: string;
 	/** Folder where generated `<fileClass>.base` files are written (trailing /). */
@@ -127,6 +143,11 @@ export interface FileclassSettings {
 export const DEFAULT_SETTINGS: FileclassSettings = {
 	classFilesPath: "",
 	fileClassAlias: "fileClass",
+	enableScopedClasses: false,
+	scopeParentKey: "up",
+	scopeClass: "Meta/Scope",
+	scopedClassesPattern: "\\d\\d\\.03 .*/classes",
+	scopedClassesKey: "classes",
 	globalFileClass: "",
 	basesFolder: "",
 	fileClassIcon: "file-spreadsheet",
@@ -187,8 +208,18 @@ export function coerceSettings(data: unknown): FileclassSettings {
 		...merged,
 		classFilesPath: normalizeFolderPath(merged.classFilesPath),
 		basesFolder: normalizeFolderPath(merged.basesFolder),
+		enableScopedClasses: merged.enableScopedClasses === true,
+		scopeParentKey: textOr(merged.scopeParentKey, DEFAULT_SETTINGS.scopeParentKey),
+		scopeClass: textOr(merged.scopeClass, DEFAULT_SETTINGS.scopeClass),
+		scopedClassesPattern: textOr(merged.scopedClassesPattern, DEFAULT_SETTINGS.scopedClassesPattern),
+		scopedClassesKey: textOr(merged.scopedClassesKey, DEFAULT_SETTINGS.scopedClassesKey),
 		customColors: Array.isArray(merged.customColors)
 			? merged.customColors.filter((c): c is string => typeof c === "string")
 			: [],
 	};
+}
+
+/** A stored text setting, trimmed, or the default when it is blank or not a string. */
+function textOr(value: unknown, fallback: string): string {
+	return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }

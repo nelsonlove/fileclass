@@ -502,10 +502,12 @@ export default class FileclassPlugin extends Plugin {
 		);
 	}
 
-	/** True when a path is (or was) a fileClass note under the class folder. */
+	/**
+	 * True when a path is (or was) a fileClass note under a class folder, or — with scoped
+	 * classes on — a scope note or a file of a scope's classes folder (§10.3).
+	 */
 	private affectsSchema(path: string): boolean {
-		const folder = this.settings.classFilesPath;
-		return !!folder && path.startsWith(folder) && path.endsWith(".md");
+		return this.index.affectsSchema(path);
 	}
 
 	/** Re-runs adapter feature detection and surfaces a one-time warning. */

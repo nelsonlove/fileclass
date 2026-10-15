@@ -20,6 +20,79 @@ export class FileclassSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
+	/**
+	 * Scoped classes (§10.3): a scope keeps its own classes beside its notes, and a class name a
+	 * note carries is looked up in its scope, then its parent's, the root's last. Off by default.
+	 */
+	private displayScopedClasses(containerEl: HTMLElement): void {
+		const s = this.plugin.settings;
+		const save = async () => {
+			await this.plugin.saveSettings();
+			this.plugin.index.rebuild();
+		};
+		new Setting(containerEl)
+			.setName("Scoped classes")
+			.setDesc(
+				"Also read classes kept in each scope's own classes folder. A class name is looked up " +
+					"in the note's scope, then its parent scope, and so on; the class files folder above is the last step."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(s.enableScopedClasses).onChange(async (value) => {
+					s.enableScopedClasses = value;
+					await save();
+					this.display();
+				})
+			);
+		if (!s.enableScopedClasses) return;
+		const text = (
+			name: string,
+			desc: string,
+			get: () => string,
+			set: (v: string) => void,
+			fallback: string
+		) =>
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc(desc)
+				.addText((t) =>
+					t
+						.setPlaceholder(fallback)
+						.setValue(get())
+						.onChange(async (value) => {
+							set(value.trim() || fallback);
+							await save();
+						})
+				);
+		text(
+			"Scope class",
+			"A scope note is a folder note with this class, or a class that extends it.",
+			() => s.scopeClass,
+			(v) => (s.scopeClass = v),
+			"Meta/Scope"
+		);
+		text(
+			"Parent scope key",
+			"The link property a scope note names its parent scope with.",
+			() => s.scopeParentKey,
+			(v) => (s.scopeParentKey = v),
+			"up"
+		);
+		text(
+			"Scoped classes pattern",
+			"Where a scope keeps its classes, below its folder: folder names separated by /, each a regular expression matched whole. An area uses the folder of its management category.",
+			() => s.scopedClassesPattern,
+			(v) => (s.scopedClassesPattern = v),
+			"\\d\\d\\.03 .*/classes"
+		);
+		text(
+			"Scoped classes key",
+			"A property on a scope note that names its classes folder (or a list of them) instead of the pattern.",
+			() => s.scopedClassesKey,
+			(v) => (s.scopedClassesKey = v),
+			"classes"
+		);
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
@@ -52,6 +125,8 @@ export class FileclassSettingTab extends PluginSettingTab {
 						this.plugin.index.rebuild();
 					})
 			);
+
+		this.displayScopedClasses(containerEl);
 
 		/*
 		 * A list, not a text box, for the same reason `Extends` became one: a name that is not
