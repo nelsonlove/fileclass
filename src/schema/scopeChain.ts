@@ -86,7 +86,11 @@ export function classNamesOf(value: unknown): string[] {
 	return [];
 }
 
-/** `[[A/B|alias]]`, `[[A/B#h]]`, `"A/B"` → `A/B`; anything else → undefined. */
+/**
+ * `[[A/B|alias]]`, `[[A/B#h]]` → `A/B`; any other non-blank string is taken as written (a plain
+ * path); the first item of a list; undefined for a blank or a non-string. A value that names
+ * nothing is caught where it is used: `up` reports it, `classes` keeps only existing folders.
+ */
 export function linkTarget(value: unknown): string | undefined {
 	const raw: unknown = Array.isArray(value) ? (value as unknown[])[0] : value;
 	if (typeof raw !== "string") return undefined;
@@ -146,9 +150,10 @@ export function scopeOfFolder(
 }
 
 /**
- * The scope of one note: a `scope:` link to a scope note when it carries one, else its folder's.
- * Free text in `scope:` is common and means something else, so only a link that resolves to a scope
- * note counts; anything else falls back to the folder, silently.
+ * The scope of one note: a `scope:` wikilink (a string starting `[[`) to a scope note when it
+ * carries one, else its folder's. `scope:` is common in a vault and often means something else
+ * (free text, a plain path, a list), so only that form counts, and a link that does not resolve to
+ * a scope note falls back to the folder without a report.
  */
 export function scopeOfNote(
 	path: string,
@@ -234,7 +239,7 @@ export function parsePattern(pattern: string): { segments: RegExp[]; error?: str
 	return { segments };
 }
 
-/** Every folder below `base` that matches the segments one level at a time, sorted. */
+/** Every folder below `base` that matches the segments one level at a time, in name order per folder. */
 export function matchPattern(base: string, segments: RegExp[], host: ScopeHost): string[] {
 	let level = [normaliseFolder(base)];
 	for (const segment of segments) {
@@ -259,13 +264,15 @@ export function areaDigit(folderName: string): string | undefined {
 /**
  * The classes folders a scope note owns.
  *
- * - The scope note's `classesKey` (a folder path, or a list of them) wins when present. Only
- *   folders that exist count.
+ * - The scope note's `classesKey` (a folder path, or a list of them) wins when present, the root
+ *   note's included. Only folders that exist count, and a key naming none gives none: it does not
+ *   fall back to the pattern.
  * - Otherwise the pattern, below the scope's folder.
  * - An area has no `.03` slot of its own, so for a folder named like `80-89 Divorce` the pattern
  *   runs below its management category, the child folder whose name starts with `80 `. Its classes
  *   are therefore the management category's too, and the index de-duplicates the shared folder.
- * - A root note at the top of the vault owns nothing: the root's folder is `classFilesPath`.
+ * - Otherwise a root note at the top of the vault owns nothing: the root's folder is
+ *   `classFilesPath`.
  */
 export function classesFoldersOf(
 	scopeNote: string,

@@ -160,10 +160,14 @@ export class FileclassIndex extends Events {
 		this.errors = [];
 	}
 
-	/** Is this note a fileClass declaration — a file of a class folder? */
+	/** Is this note a fileClass declaration — a file of the class folder, or of a scoped one? */
 	private isClassNote(file: TFile): boolean {
 		const folder = this.host.settings.classFilesPath;
-		return (!!folder && file.path.startsWith(folder)) || this.nameByPath.has(file.path);
+		return (
+			(!!folder && file.path.startsWith(folder)) ||
+			this.nameByPath.has(file.path) ||
+			this.scopedFolderOf(file.path) !== undefined
+		);
 	}
 
 	private indexFileClassNote(file: TFile, name: string): void {
@@ -259,8 +263,9 @@ export class FileclassIndex extends Events {
 			if (folder === undefined) continue;
 			const types: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.[settings.typeKey];
 			if (!classNamesOf(types).includes(SCOPED_CLASS_TYPE)) {
-				// The classes folder's own folder note is expected there; anything else is a stray.
-				if (file.path !== `${folder}/${folder.slice(folder.lastIndexOf("/") + 1)}.md`) {
+				// A folder note (of the classes folder or of a folder inside it) is expected there;
+				// anything else is a stray.
+				if (!isFolderNote(file.path)) {
 					errors.add(`${file.path} sits in the classes folder ${folder} but is not a ${SCOPED_CLASS_TYPE}; it binds nothing.`);
 				}
 				continue;
@@ -299,13 +304,23 @@ export class FileclassIndex extends Events {
 			this.layersByScope.set(note, layers);
 		}
 
-		// Index each scoped class once, under the scope with the longest chain among its owners:
-		// a management category's, not its area's, when the two share a folder.
+		// Index each scoped class once, under the deepest owner whose folder holds the classes
+		// folder: a management category's, not its area's, when the two share a folder, whether or
+		// not the category has an `up` yet. The longer chain breaks a tie.
+		const depthOf = (note: string, folder: string): number => {
+			const scopeFolder = parentFolder(note);
+			return scopeFolder && folder.startsWith(`${scopeFolder}/`) ? scopeFolder.split("/").length : 0;
+		};
 		for (const [folder, classes] of classesInFolder) {
 			let owner: string | undefined;
 			for (const [note, folders] of ownFolders) {
 				if (!folders.includes(folder)) continue;
-				if (owner === undefined || (chainLengthOf.get(note) ?? 0) > (chainLengthOf.get(owner) ?? 0)) owner = note;
+				const better =
+					owner === undefined ||
+					depthOf(note, folder) > depthOf(owner, folder) ||
+					(depthOf(note, folder) === depthOf(owner, folder) &&
+						(chainLengthOf.get(note) ?? 0) > (chainLengthOf.get(owner) ?? 0));
+				if (better) owner = note;
 			}
 			if (owner === undefined) continue;
 			for (const [name, path] of classes) {
@@ -371,9 +386,14 @@ export class FileclassIndex extends Events {
 	}
 
 	private computeInheritance(): void {
+		// A parent that names no class stays in the chain by its bare name, as it always has
+		// (getAncestors shows it, and it contributes no fields); one that names the class itself
+		// does not, so a self-reference still gives no ancestors.
 		const parentOf = (path: string) => {
 			const ext = this.byPath.get(path)?.options.extends;
-			return ext ? this.lookup(this.scopeOfClass.get(path) ?? ROOT, ext, path) : undefined;
+			if (!ext) return undefined;
+			const found = this.lookup(this.scopeOfClass.get(path) ?? ROOT, ext, path);
+			return found ?? (ext === this.nameByPath.get(path) ? undefined : ext);
 		};
 		for (const path of this.byPath.keys()) {
 			const ancestors = computeAncestors(path, parentOf);
@@ -549,6 +569,8 @@ export class FileclassIndex extends Events {
 
 	// -- accessors ------------------------------------------------------------
 	// A bare name means the root scope's class (§10.3); a context parameter comes with PR 2.
+	// `isFileClassNote` and `fileClassNameOfNote` are keyed by path, so they answer for a scoped
+	// class too — but its name, passed back to a bare-name accessor, means the root's class.
 
 	get fileClassNames(): string[] {
 		return [...this.pathByName.keys()];

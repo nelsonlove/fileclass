@@ -127,6 +127,17 @@ describe("scoped classes off", () => {
 		expect(index.errors).toEqual([]);
 	});
 
+	it("keeps a parent that names no class in the ancestors, as before; a self-reference gives none", () => {
+		const files = fixture();
+		files["Classes/Orphan.md"] = { type: "Meta/Fileclass", extends: "Missing" };
+		files["Classes/Selfish.md"] = { type: "Meta/Fileclass", extends: "Selfish" };
+		for (const enableScopedClasses of [false, true]) {
+			const { index } = indexOver(files, { enableScopedClasses });
+			expect(index.getAncestors("Orphan")).toEqual(["Missing"]);
+			expect(index.getAncestors("Selfish")).toEqual([]);
+		}
+	});
+
 	it("does not rebuild for a scoped path", () => {
 		const { index } = indexOver(fixture());
 		expect(index.affectsSchema("Classes/Book.md")).toBe(true);
@@ -192,6 +203,29 @@ describe("scoped classes on", () => {
 		expect(index.getFileClasses(file("40 F/ledger.md"))).toContain("Global");
 	});
 
+	it("a subfolder's folder note is not a stray, and no file of a scoped folder carries the global class", () => {
+		const files = fixture();
+		files["80-89 D/80 M/80.03 Shapes/classes/Event/Event.md"] = { type: "Meta/Collection" };
+		files["Classes/Global.md"] = { type: "Meta/Fileclass", fields: [field("g")] };
+		const { index, file } = indexOver(files, { ...on, globalFileClass: "Global" });
+		expect(index.errors.some((e) => e.includes("classes/Event/Event.md"))).toBe(false);
+		expect(index.getFileClasses(file("80-89 D/80 M/80.03 Shapes/classes/stray.md"))).not.toContain("Global");
+		expect(index.getFileClasses(file("80-89 D/80 M/80.03 Shapes/classes/Event/Event.md"))).not.toContain("Global");
+	});
+
+	it("a shared folder belongs to the management category even when it has no up yet", () => {
+		const files = fixture();
+		// The category loses its up: its chain is now shorter than its area's.
+		files["80-89 D/80 M/80 M.md"] = { type: "Meta/Scope/Category" };
+		// A class of the category extends a class only the category's own chain reaches, by name.
+		files["80-89 D/80 M/80.03 Shapes/classes/Hearing.md"] = { type: "Meta/Fileclass", extends: "Case" };
+		files["80-89 D/80 M/hearing.md"] = { type: "Hearing" };
+		const { index, file } = indexOver(files, on);
+		expect(names(index.getFields(file("80-89 D/80 M/hearing.md")))).toEqual(["docket"]);
+		// The area's notes still see the shared folder's classes.
+		expect(index.getFileClasses(file("80-89 D/85 E/85.11 V/case.md"))).toEqual(["Case"]);
+	});
+
 	it("rebuilds for a scope note, a scoped class, and a new classes folder", () => {
 		const { index } = indexOver(fixture(), on);
 		expect(index.affectsSchema("80-89 D/80-89 D.md")).toBe(true);
@@ -230,8 +264,11 @@ describe("the root binds the same notes, off and on", () => {
 		const off = snapshot(files, false, "Global");
 		const on = snapshot(files, true, "Global");
 		const scopedNames = ["Case", "Ledger", "X"];
-		// The notes that are notes under both settings: the scoped class files become class notes.
+		// The scoped classes folders become class folders when the setting is on (their files carry
+		// no global class, as the root folder's never did), so the comparison is over every other note.
+		const scopedFolders = ["80-89 D/80 M/80.03 Shapes/classes/", "40 F/40.03 Shapes/classes/", "50 Dup/a/", "50 Dup/b/"];
 		for (const p of Object.keys(on)) {
+			if (scopedFolders.some((f) => p.startsWith(f))) continue;
 			const rootOnly = (s: { classes: string[] }) => s.classes.filter((c) => !scopedNames.includes(c));
 			expect(rootOnly(on[p]), p).toEqual(rootOnly(off[p]));
 			if (on[p].classes.every((c) => !scopedNames.includes(c))) expect(on[p].fields, p).toEqual(off[p].fields);
