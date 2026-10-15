@@ -16,7 +16,8 @@ note** → **Create a base for this fileClass**. A small dialog lets you choose:
 
 - the **base file** path (new or existing; defaults to
   `<basesFolder>/<FileClass>.base`, the folder set in **Settings → Fileclass →
-  Bases folder**), and
+  Bases folder**; a [scoped class](../schema/#scoped-classes) defaults to its
+  scope's `.07 …/bases/generated/` instead, or to nothing), and
 - the **view name** — the managed view (defaults to the fileClass name).
 
 It creates the base — with an **editable `fileclass-table` view** (see below)
