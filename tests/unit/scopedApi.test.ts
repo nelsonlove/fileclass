@@ -100,6 +100,9 @@ describe("API 1.2", () => {
 		expect(result.ok).toBe(false);
 		expect(result.changed).toBe(0);
 		expect(result.errors[0].message).toMatch(/no scope, note or folder/);
+		const opened = await api.openSchema("Score", "No/such/place");
+		expect(opened.ok).toBe(false);
+		expect(opened.message).toMatch(/no scope, note or folder/);
 	});
 
 	it("openSchema opens the class the scope means", async () => {

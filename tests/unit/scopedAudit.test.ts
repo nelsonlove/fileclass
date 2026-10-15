@@ -25,6 +25,11 @@ describe("classRef", () => {
 		expect(ref).toBe(`Event/Session @ ${SCOPED_SESSION}`);
 		expect(parseClassRef(ref)).toEqual({ name: "Event/Session", path: SCOPED_SESSION });
 		expect(parseClassRef("Score")).toEqual({ name: "Score" });
+		// A folder may hold the separator; a class name rarely does, so the first one splits.
+		expect(parseClassRef("Score @ Clients @ Acme/classes/Score.md")).toEqual({
+			name: "Score",
+			path: "Clients @ Acme/classes/Score.md",
+		});
 	});
 });
 

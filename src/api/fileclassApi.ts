@@ -550,7 +550,13 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 		},
 
 		async openSchema(fileClass, scope) {
-			const ctx = scopeRef(scope);
+			// A write-shaped result: a scope that names nothing is returned, never thrown.
+			let ctx: ScopeRef | undefined;
+			try {
+				ctx = scopeRef(scope);
+			} catch (e) {
+				return { ok: false, path: fileClass, message: (e as Error).message };
+			}
 			if (!index.getFileClass(fileClass, ctx)) {
 				return { ok: false, path: fileClass, message: `No fileClass "${fileClass}".` };
 			}

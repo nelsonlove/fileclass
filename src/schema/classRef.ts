@@ -13,7 +13,9 @@ export function classRef(name: string, path: string, scope: string): string {
 
 /** The name and, for a scoped class, its file back out of a `classRef`. */
 export function parseClassRef(ref: string): { name: string; path?: string } {
-	const i = ref.lastIndexOf(SEP);
+	// The first separator: a class name is a path below a classes folder and rarely holds one; a
+	// vault path holds one more often.
+	const i = ref.indexOf(SEP);
 	if (i < 0 || !ref.slice(i + SEP.length).endsWith(".md")) return { name: ref };
 	return { name: ref.slice(0, i), path: ref.slice(i + SEP.length) };
 }

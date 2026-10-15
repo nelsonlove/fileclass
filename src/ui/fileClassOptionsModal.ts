@@ -102,7 +102,7 @@ export class FileClassOptionsModal extends Modal {
 			for (const name of this.parentCandidates().sort((a, b) => a.localeCompare(b))) {
 				d.addOption(name, name);
 			}
-			if (current && !this.plugin.index.resolveParent(current, this.file.path)) {
+			if (current && !this.parentPath(current)) {
 				d.addOption(current, `${current} (no such fileClass)`);
 			}
 			d.setValue(current).onChange((v) => {
@@ -116,7 +116,7 @@ export class FileClassOptionsModal extends Modal {
 			b.setIcon("external-link").onClick(() => {
 				const name = (this.opts.extends ?? "").trim();
 				// The parent as this class resolves it: from its own scope upward (§10.3).
-				const parent = name ? this.plugin.index.resolveParent(name, this.file.path) : undefined;
+				const parent = name ? this.parentPath(name) : undefined;
 				if (name && parent) openFileClassSchema(this.plugin, name, undefined, parent);
 			});
 		});
@@ -297,9 +297,21 @@ export class FileClassOptionsModal extends Modal {
 	private refreshParentLink(): void {
 		if (!this.parentLink) return;
 		const name = (this.opts.extends ?? "").trim();
-		const exists = !!name && !!this.plugin.index.resolveParent(name, this.file.path);
+		const exists = !!name && !!this.parentPath(name);
 		this.parentLink.extraSettingsEl.toggleClass("is-hidden-fc", !exists);
 		this.parentLink.setTooltip(exists ? `Open "${name}"'s schema` : "");
+	}
+
+	/**
+	 * The class file an `extends` name means for this class: from its own scope upward, never itself
+	 * (§10.3). A root class keeps today's reading, where its own name is the class itself — so with
+	 * scoped classes off, nothing on this screen changes.
+	 */
+	private parentPath(name: string): string | undefined {
+		const index = this.plugin.index;
+		const found = index.resolveParent(name, this.file.path);
+		if (found) return found;
+		return (index.scopeOfClassFile(this.file.path) ?? "") === "" ? index.resolveClass(name) : undefined;
 	}
 
 	/**
@@ -371,7 +383,7 @@ export class FileClassOptionsModal extends Modal {
 	/** The field names this class inherits — what it may exclude, and nothing else. */
 	private inheritedFieldNames(): string[] {
 		const parent = (this.opts.extends ?? "").trim();
-		const parentPath = parent ? this.plugin.index.resolveParent(parent, this.file.path) : undefined;
+		const parentPath = parent ? this.parentPath(parent) : undefined;
 		if (!parentPath) return [];
 		return this.plugin.index
 			.resolvedFieldsOf(parentPath)

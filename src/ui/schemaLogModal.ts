@@ -175,7 +175,10 @@ class SchemaLogModal extends Modal {
 		action.addEventListener("click", () => {
 			// A scoped class's line carries its file (classRef.ts); a root class's, its name.
 			const { name, path } = parseClassRef(fileClass);
-			if (!this.plugin.index.getFileClassFile(name, path)) {
+			// A scoped line whose class file is gone says so: read from a missing path, the name
+			// would fall back to the root's class of the same name.
+			const gone = path !== undefined && !this.plugin.index.isFileClassNote(path);
+			if (gone || !this.plugin.index.getFileClassFile(name, path)) {
 				new Notice(`Fileclass: "${fileClass}" no longer exists.`);
 				return;
 			}
