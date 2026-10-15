@@ -215,13 +215,23 @@ describe("scoped classes on", () => {
 
 	it("a shared folder belongs to the management category even when it has no up yet", () => {
 		const files = fixture();
-		// The category loses its up: its chain is now shorter than its area's.
-		files["80-89 D/80 M/80 M.md"] = { type: "Meta/Scope/Category" };
-		// A class of the category extends a class only the category's own chain reaches, by name.
-		files["80-89 D/80 M/80.03 Shapes/classes/Hearing.md"] = { type: "Meta/Fileclass", extends: "Case" };
+		// The category loses its up, so its chain is now shorter than its area's, and it names a
+		// second classes folder that only its own chain reaches.
+		files["80-89 D/80 M/80 M.md"] = {
+			type: "Meta/Scope/Category",
+			classes: ["80-89 D/80 M/80.03 Shapes/classes", "80-89 D/80 M/extra"],
+		};
+		files["80-89 D/80 M/extra/Base.md"] = { type: "Meta/Fileclass", fields: [field("base")] };
+		// A class of the shared folder extends Base: it resolves only if the category owns the
+		// shared folder. Owned by the area (the longer chain), Base would be out of reach.
+		files["80-89 D/80 M/80.03 Shapes/classes/Hearing.md"] = {
+			type: "Meta/Fileclass",
+			extends: "Base",
+			fields: [field("heard")],
+		};
 		files["80-89 D/80 M/hearing.md"] = { type: "Hearing" };
 		const { index, file } = indexOver(files, on);
-		expect(names(index.getFields(file("80-89 D/80 M/hearing.md")))).toEqual(["docket"]);
+		expect(names(index.getFields(file("80-89 D/80 M/hearing.md")))).toEqual(["base", "heard"]);
 		// The area's notes still see the shared folder's classes.
 		expect(index.getFileClasses(file("80-89 D/85 E/85.11 V/case.md"))).toEqual(["Case"]);
 	});
