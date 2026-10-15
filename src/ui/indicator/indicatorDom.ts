@@ -60,11 +60,11 @@ export function makeIndicatorIcon(
 	// a stale icon from an up-to-date one instead of keeping the old one.
 	el.dataset.fcPath = file.path;
 	el.setAttribute("aria-label", fileClassName ? "Edit fileClass" : "Fileclass fields");
-	setIcon(el, fileClassName ? plugin.index.resolveIcon(fileClassName) : plugin.index.iconForFile(file));
+	setIcon(el, fileClassName ? plugin.index.resolveIcon(fileClassName, file.path) : plugin.index.iconForFile(file));
 	el.addEventListener("click", (e) => {
 		e.preventDefault();
 		e.stopPropagation();
-		if (fileClassName) openFileClassSchema(plugin, fileClassName);
+		if (fileClassName) openFileClassSchema(plugin, fileClassName, undefined, file.path);
 		else new NoteFieldsModal(plugin, file).open();
 	});
 	return el;

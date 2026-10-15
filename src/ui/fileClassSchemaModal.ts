@@ -23,7 +23,8 @@ import {
 	removeFieldDef,
 	updateFieldDef,
 } from "../schema/fileClassWrite";
-import { ChoiceSuggestModal } from "../fields/input/valueModals";
+import type { ClassContext } from "../schema/fileclassIndex";
+import { pickClass } from "./classPicker";
 import { isRequired } from "../fields/validate";
 import { FieldDefModal, FieldDefResult } from "./fieldDefModal";
 import { migrateRenamedField } from "../commands/renameFieldMigration";
@@ -74,7 +75,7 @@ export class FileClassSchemaModal extends Modal {
 	 * note-fields breadcrumb all land on one screen with nothing missing.
 	 */
 	private renderClassActions(contentEl: HTMLElement): void {
-		const hasBase = !!fileClassBaseFile(this.plugin, this.name);
+		const hasBase = !!fileClassBaseFile(this.plugin, this.name, this.file.path);
 		const leave = () => {
 			this.close();
 			this.closeParent?.();
@@ -93,7 +94,7 @@ export class FileClassSchemaModal extends Modal {
 					.setTooltip(hasBase ? "Modify its base" : "Create a base")
 					.onClick(() => {
 						leave();
-						pickAndCreateBase(this.plugin, this.name);
+						pickAndCreateBase(this.plugin, this.name, this.file.path);
 					})
 			)
 			.addExtraButton((b) =>
@@ -103,7 +104,7 @@ export class FileClassSchemaModal extends Modal {
 					.setDisabled(!hasBase)
 					.onClick(() => {
 						leave();
-						void openFileClassBase(this.plugin, this.name);
+						void openFileClassBase(this.plugin, this.name, this.file.path);
 					})
 			)
 			.addExtraButton((b) =>
@@ -112,7 +113,7 @@ export class FileClassSchemaModal extends Modal {
 					.setTooltip("Bulk edit one of its fields")
 					.onClick(() => {
 						this.close();
-						openBulkEdit(this.plugin, this.name);
+						openBulkEdit(this.plugin, this.name, this.file.path);
 					})
 			);
 	}
@@ -131,13 +132,13 @@ export class FileClassSchemaModal extends Modal {
 	 */
 	private levelFields(): Field[] {
 		return this.plugin.index
-			.getResolvedFields(this.name)
+			.getResolvedFields(this.name, this.file.path)
 			.filter((f) => f.path === this.parentPath);
 	}
 
 	/** The whole resolved set, for the keys a move has to write. */
 	private resolvedFields(): Field[] {
-		return this.plugin.index.getResolvedFields(this.name);
+		return this.plugin.index.getResolvedFields(this.name, this.file.path);
 	}
 
 	private render(): void {
@@ -243,7 +244,7 @@ export class FileClassSchemaModal extends Modal {
 		new FieldDefModal(this.app, {
 			title: "Add field",
 			dateDefaults: dateFormatDefaults(this.plugin.settings),
-			classFields: this.plugin.index.getResolvedFields(this.name),
+			classFields: this.plugin.index.getResolvedFields(this.name, this.file.path),
 			onSubmit: (r) => {
 				void mutateFields(this.app, this.file, (fields) =>
 					addFieldDef(
@@ -269,20 +270,20 @@ export class FileClassSchemaModal extends Modal {
 	 */
 	private chainIds(fields: RawFieldEntry[]): Set<string> {
 		const ids = collectFieldIds(fields);
-		for (const f of this.plugin.index.getResolvedFields(this.name)) ids.add(f.id);
+		for (const f of this.plugin.index.getResolvedFields(this.name, this.file.path)) ids.add(f.id);
 		return ids;
 	}
 
 	/** What saving a definition implies beyond the write — shared with the other door. */
 	private writeDependency(r: FieldDefResult): void {
-		writeFieldDependency(this.plugin, this.name, r);
+		writeFieldDependency(this.plugin, this.name, r, this.file.path);
 	}
 
 	private editField(field: Field): void {
 		new FieldDefModal(this.app, {
 			title: `Edit ${field.name}`,
 			dateDefaults: dateFormatDefaults(this.plugin.settings),
-			classFields: this.plugin.index.getResolvedFields(this.name),
+			classFields: this.plugin.index.getResolvedFields(this.name, this.file.path),
 			initial: { name: field.name, type: field.type, options: field.options },
 			onEditChildren: () =>
 				new FileClassSchemaModal(this.plugin, this.name, this.file, childPathOf(field)).open(),
@@ -346,8 +347,8 @@ export class FileClassSchemaModal extends Modal {
  * *Add a field* does on a class note. Two modals, and the stack is LIFO (#118): answer the
  * dialog and the schema behind it is where you land.
  */
-export function openAddFieldTo(plugin: FileclassPlugin, name: string): void {
-	const file = plugin.index.getFileClassFile(name);
+export function openAddFieldTo(plugin: FileclassPlugin, name: string, ctx?: ClassContext): void {
+	const file = plugin.index.getFileClassFile(name, ctx);
 	if (!file) {
 		new Notice(`Fileclass: note for "${name}" not found.`);
 		return;
@@ -360,28 +361,19 @@ export function openAddFieldTo(plugin: FileclassPlugin, name: string): void {
 export function openFileClassSchema(
 	plugin: FileclassPlugin,
 	name?: string,
-	closeParent?: () => void
+	closeParent?: () => void,
+	/** Where `name` is read from (§10.3): a note, a class file, a scope. None means the root. */
+	ctx?: ClassContext
 ): void {
-	const open = (n: string) => {
-		const file = plugin.index.getFileClassFile(n);
+	const open = (n: string, c?: ClassContext) => {
+		const file = plugin.index.getFileClassFile(n, c);
 		if (!file) {
 			new Notice(`Fileclass: note for "${n}" not found.`);
 			return;
 		}
 		new FileClassSchemaModal(plugin, n, file, "", closeParent).open();
 	};
-	if (name) return open(name);
-
-	const names = plugin.index.fileClassNames;
-	if (!names.length) {
-		new Notice("Fileclass: no fileClasses defined.");
-		return;
-	}
-	new ChoiceSuggestModal<string>(
-		plugin.app,
-		[...names].sort(),
-		(n) => n,
-		open,
-		"Select a fileClass to edit"
-	).open();
+	if (name) return open(name, ctx);
+	// Every class, scoped ones included: a class kept by a scope is edited like any other.
+	pickClass(plugin, "Select a fileClass to edit", (c) => open(c.name, c.path));
 }

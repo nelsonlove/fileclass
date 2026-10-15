@@ -28,8 +28,9 @@ export function warnOnStalePaths(plugin: FileclassPlugin, file: TAbstractFile, o
 	if (ev.oldPath === ev.newPath) return;
 
 	const found: { label: string; ref: StaleReference }[] = [];
-	for (const name of plugin.index.fileClassNames) {
-		const note = plugin.index.getFileClassFile(name);
+	// Every class, scoped ones included (§10.3): each stores its paths as plain strings.
+	for (const { name, path } of plugin.index.allClasses()) {
+		const note = plugin.app.vault.getFileByPath(path);
 		if (!(note instanceof TFile)) continue;
 		// The renamed file being a class note is the index's business, not this warning's.
 		if (note.path === ev.newPath) continue;

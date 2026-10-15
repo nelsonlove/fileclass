@@ -18,7 +18,7 @@ import { isMediaType } from "../fields/candidates";
 import { createNoteWithClass } from "../commands/createNoteWithClass";
 import { ChoiceSuggestModal } from "../fields/input/valueModals";
 import { Seed } from "../schema/newNote";
-import { fileClassClaimingView } from "./baseSync";
+import { classClaimingView } from "./baseSync";
 import { classesNamedInFilter, fieldValuesInFilter } from "./baseYaml";
 import { BasesGroupLike, renderedGroups, groupProperty } from "./tableGroups";
 import { fieldForView } from "./reverseView";
@@ -86,6 +86,8 @@ class FileclassTableView extends Component {
 	private toolbarItem?: HTMLElement;
 	/** Every class this table is about — one, usually; several when its filter names several. */
 	private toolbarClasses: string[] = [];
+	/** Each toolbar class's file: a name alone may mean several classes (§10.3). */
+	private toolbarClassPaths = new Map<string, string>();
 	/** The "New <Class>" item beside it (#84); which class it creates is `toolbarClasses`. */
 	private newItem?: HTMLElement;
 	/** `base#view` → that view's `filters`, as read from the base (null when there are none). */
@@ -293,7 +295,14 @@ class FileclassTableView extends Component {
 				e.preventDefault();
 				// Same question, and only when there is one: a table about Books and Comics can still
 				// make a note — it just cannot know which kind without being told.
-				this.withClass((name) => void createNoteWithClass(this.plugin, { fileClass: name, seeds: this.seedsFor(name) }));
+				this.withClass(
+					(name) =>
+						void createNoteWithClass(this.plugin, {
+							fileClass: name,
+							seeds: this.seedsFor(name),
+							scope: this.classCtx(name),
+						})
+				);
 			};
 			button.addEventListener("click", create);
 			button.addEventListener("keydown", (e) => {
@@ -323,6 +332,11 @@ class FileclassTableView extends Component {
 	 * A table filtered on `containsAny("Book", "Comic")` is about both, and neither button should
 	 * vanish for it: the question "which one" is one click, where a missing button is a dead end.
 	 */
+	/** The file of a toolbar class, as the table found it; none means the root's. */
+	private classCtx(name: string): string | undefined {
+		return this.toolbarClassPaths.get(name);
+	}
+
 	private withClass(use: (fileClass: string) => void): void {
 		const candidates = this.toolbarClasses;
 		if (candidates.length === 1) {
@@ -361,7 +375,7 @@ class FileclassTableView extends Component {
 		const claimed = this.viewIdentity();
 		if (claimed) {
 			const fields = this.plugin.index
-				.getResolvedFields(fileClass)
+				.getResolvedFields(fileClass, this.classCtx(fileClass))
 				.filter((f) => isRootField(f))
 				.map((f) => f.name);
 			for (const fixed of fieldValuesInFilter(this.filtersOf(claimed), fields)) {
@@ -383,7 +397,8 @@ class FileclassTableView extends Component {
 		if (!claimed) return undefined;
 		// The class says which of its fields this view reads backwards; its name is never consulted,
 		// so a view called `A's Bs` seeds exactly as one called `Book by author` does.
-		const declared = this.plugin.index.getFileClass(fileClass)?.options.relatedViews ?? [];
+		const declared =
+			this.plugin.index.getFileClass(fileClass, this.classCtx(fileClass))?.options.relatedViews ?? [];
 		const field = fieldForView(declared, claimed.file, claimed.viewName);
 		if (!field) return undefined;
 		const host = this.hostNote();
@@ -407,7 +422,7 @@ class FileclassTableView extends Component {
 		const host = this.hostNote();
 		if (!host) return undefined;
 		const declared = this.toolbarClasses.some((name) => {
-			const entries = this.plugin.index.getFileClass(name)?.options.relatedViews ?? [];
+			const entries = this.plugin.index.getFileClass(name, this.classCtx(name))?.options.relatedViews ?? [];
 			return !!fieldForView(entries, claimed.file, claimed.viewName);
 		});
 		return declared ? host.basename : undefined;
@@ -433,7 +448,8 @@ class FileclassTableView extends Component {
 	 */
 	private filterClasses(view: { file: string; viewName: string }): string[] {
 		return classesNamedInFilter(this.filtersOf(view), this.plugin.settings.fileClassAlias).filter(
-			(name) => this.plugin.index.fileClassNames.includes(name)
+			// A name as the base's own folder sees it: a scope's base names the scope's classes.
+			(name) => this.plugin.index.resolveClass(name, view.file) !== undefined
 		);
 	}
 
@@ -519,14 +535,26 @@ class FileclassTableView extends Component {
 		// Reported: a view whose rows carried two classes (a note that is both a Book and an Article)
 		// fell straight to (3), lost its New button and got a generic wrench — while its filter said
 		// `fileClass.containsAny("Book")` in plain sight.
-		const declared = claimed && fileClassClaimingView(this.plugin, claimed.file, claimed.viewName);
+		const index = this.plugin.index;
+		const declared = claimed ? classClaimingView(this.plugin, claimed.file, claimed.viewName) : undefined;
 		const named = claimed ? this.filterClasses(claimed) : [];
-		const classes = new Set<string>(declared ? [declared] : named);
+		const classes = new Set<string>(declared ? [declared.name] : named);
+		const paths = new Map<string, string>();
+		if (declared) paths.set(declared.name, declared.path);
+		for (const name of named) {
+			const path = claimed ? index.resolveClass(name, claimed.file) : undefined;
+			if (path && !paths.has(name)) paths.set(name, path);
+		}
 		if (!classes.size) {
 			for (const entry of ds.data) {
-				for (const name of this.plugin.index.getFileClasses(entry.file)) classes.add(name);
+				for (const name of index.getFileClasses(entry.file)) {
+					classes.add(name);
+					const path = index.resolveClass(name, entry.file);
+					if (path && !paths.has(name)) paths.set(name, path);
+				}
 			}
 		}
+		this.toolbarClassPaths = paths;
 		if (!classes.size) {
 			this.toolbarItem?.remove();
 			this.toolbarItem = undefined;
@@ -550,7 +578,7 @@ class FileclassTableView extends Component {
 				e.preventDefault();
 				// One class goes straight there; several ask **among this table's own** classes, which
 				// is a shorter question than the vault-wide picker behind an unnamed wrench.
-				this.withClass((name) => openFileClassSchema(this.plugin, name));
+				this.withClass((name) => openFileClassSchema(this.plugin, name, undefined, this.classCtx(name)));
 			};
 			button.addEventListener("click", open);
 			button.addEventListener("keydown", (e) => {

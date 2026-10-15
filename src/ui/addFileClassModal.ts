@@ -19,7 +19,9 @@ export class AddFileClassModal extends SuggestModal<string> {
 	getSuggestions(query: string): string[] {
 		const alreadyBound = new Set(this.plugin.index.bindingFor(this.file).innerNames);
 		const q = query.toLowerCase();
-		return this.plugin.index.fileClassNames
+		// The classes this note's scope sees, a scope's own included (§10.3).
+		return this.plugin.index
+			.fileClassNamesFor(this.file)
 			.filter((name) => !alreadyBound.has(name) && name.toLowerCase().includes(q))
 			.sort();
 	}
@@ -33,7 +35,7 @@ export class AddFileClassModal extends SuggestModal<string> {
 	}
 
 	private async addFileClass(name: string): Promise<void> {
-		if (!this.plugin.index.getFileClass(name)) {
+		if (!this.plugin.index.getFileClass(name, this.file)) {
 			new Notice(`Fileclass: "${name}" not found.`);
 			return;
 		}

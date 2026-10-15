@@ -102,7 +102,7 @@ export class FileClassOptionsModal extends Modal {
 			for (const name of this.parentCandidates().sort((a, b) => a.localeCompare(b))) {
 				d.addOption(name, name);
 			}
-			if (current && !this.plugin.index.fileClassNames.includes(current)) {
+			if (current && !this.plugin.index.resolveParent(current, this.file.path)) {
 				d.addOption(current, `${current} (no such fileClass)`);
 			}
 			d.setValue(current).onChange((v) => {
@@ -115,7 +115,9 @@ export class FileClassOptionsModal extends Modal {
 			this.parentLink = b;
 			b.setIcon("external-link").onClick(() => {
 				const name = (this.opts.extends ?? "").trim();
-				if (name) openFileClassSchema(this.plugin, name);
+				// The parent as this class resolves it: from its own scope upward (§10.3).
+				const parent = name ? this.plugin.index.resolveParent(name, this.file.path) : undefined;
+				if (name && parent) openFileClassSchema(this.plugin, name, undefined, parent);
 			});
 		});
 		this.refreshParentLink();
@@ -237,7 +239,7 @@ export class FileClassOptionsModal extends Modal {
 			const base: unknown = parseYaml(await this.app.vault.read(file));
 			const view = this.opts.baseView?.trim() || this.name;
 			const fields = this.plugin.index
-				.getResolvedFields(this.name)
+				.getResolvedFields(this.name, this.file.path)
 				.filter((f) => isRootField(f))
 				.map((f) => f.name);
 			// The scope comes from the form, not from the saved note: the status must
@@ -273,7 +275,7 @@ export class FileClassOptionsModal extends Modal {
 		const path = this.opts.baseFile?.trim();
 		if (!path) return;
 		const view = this.opts.baseView?.trim() || this.name;
-		const taken = fileClassClaimingView(this.plugin, path, view, this.name);
+		const taken = fileClassClaimingView(this.plugin, path, view, this.name, this.file.path);
 		if (taken) {
 			new Notice(
 				`Fileclass: "${taken}" already mirrors into ${path} › ${view}. ` +
@@ -283,7 +285,7 @@ export class FileClassOptionsModal extends Modal {
 		}
 		// Persist config, then apply with explicit path/view (cache may lag).
 		await writeOptions(this.app, this.file, buildOptionUpdates(this.opts));
-		await applyBaseSync(this.plugin, this.name, normalizePath(path), view);
+		await applyBaseSync(this.plugin, this.name, normalizePath(path), view, this.file.path);
 		await this.updateStatus();
 	}
 
@@ -295,7 +297,7 @@ export class FileClassOptionsModal extends Modal {
 	private refreshParentLink(): void {
 		if (!this.parentLink) return;
 		const name = (this.opts.extends ?? "").trim();
-		const exists = !!name && this.plugin.index.fileClassNames.includes(name);
+		const exists = !!name && !!this.plugin.index.resolveParent(name, this.file.path);
 		this.parentLink.extraSettingsEl.toggleClass("is-hidden-fc", !exists);
 		this.parentLink.setTooltip(exists ? `Open "${name}"'s schema` : "");
 	}
@@ -307,9 +309,13 @@ export class FileClassOptionsModal extends Modal {
 	 */
 	private parentCandidates(): string[] {
 		const index = this.plugin.index;
-		return index.fileClassNames.filter(
-			(name) => name !== this.name && !index.getAncestors(name).includes(this.name)
-		);
+		const self = this.file.path;
+		// What this class's scope sees, its own name included when a scope above gives it: a class
+		// may extend the class it shadows (§10.3). By file, so a shadow is never its own descendant.
+		return index.fileClassNamesFor(self).filter((name) => {
+			const parent = index.resolveParent(name, self);
+			return !!parent && parent !== self && !index.ancestorPathsOf(parent).includes(self);
+		});
 	}
 
 	/**
@@ -365,9 +371,10 @@ export class FileClassOptionsModal extends Modal {
 	/** The field names this class inherits — what it may exclude, and nothing else. */
 	private inheritedFieldNames(): string[] {
 		const parent = (this.opts.extends ?? "").trim();
-		if (!parent || !this.plugin.index.fileClassNames.includes(parent)) return [];
+		const parentPath = parent ? this.plugin.index.resolveParent(parent, this.file.path) : undefined;
+		if (!parentPath) return [];
 		return this.plugin.index
-			.getResolvedFields(parent)
+			.resolvedFieldsOf(parentPath)
 			.filter((f) => !f.path)
 			.map((f) => f.name);
 	}
@@ -478,7 +485,7 @@ export class FileClassOptionsModal extends Modal {
 						.setIcon("pencil")
 						.setTooltip("Edit")
 						.onClick(() => {
-							void editRelatedView(this.plugin, this.name, entry).then((edited) => {
+							void editRelatedView(this.plugin, this.name, entry, this.file.path).then((edited) => {
 								if (!edited) return;
 								const next = [...(this.opts.relatedViews ?? [])];
 								next[index] = edited;
@@ -504,7 +511,7 @@ export class FileClassOptionsModal extends Modal {
 			});
 			new Setting(host).addButton((b) =>
 				b.setButtonText("Add new").onClick(() => {
-					void editRelatedView(this.plugin, this.name).then((added) => {
+					void editRelatedView(this.plugin, this.name, undefined, this.file.path).then((added) => {
 						if (!added) return;
 						// The pair is the identity, here as in the writers: a field may be read backwards by
 						// several views, and declaring the same one twice is a no-op.
@@ -590,8 +597,12 @@ export class FileClassOptionsModal extends Modal {
 	 * reader looking for it.
 	 */
 	private classFolderReason(folder: string): string | null {
-		const classes = this.plugin.settings.classFilesPath.replace(/\/+$/, "");
-		if (!classes || folder.replace(/\/+$/, "") !== classes) return null;
+		// The root's classes folder, and every scope's (§10.3).
+		const target = folder.replace(/\/+$/, "");
+		const classes = [this.plugin.settings.classFilesPath, ...this.plugin.index.scopedClassesFolders()]
+			.map((c) => c.replace(/\/+$/, ""))
+			.filter(Boolean);
+		if (!classes.includes(target)) return null;
 		return "Your class notes live here — binding it would make every class a note of this class.";
 	}
 

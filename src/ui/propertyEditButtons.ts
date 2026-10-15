@@ -309,12 +309,14 @@ export class PropertyEditButtons extends Component {
 		file: TFile,
 		fcName: string
 	): void {
-		const base = fileClassBaseFile(this.plugin, fcName);
+		// The class note itself is the context: a scoped class reads its own definition (§10.3).
+		const ctx = file.path;
+		const base = fileClassBaseFile(this.plugin, fcName, ctx);
 		// The class's own shape is part of the state: editing the schema leaves the base file
 		// and its path untouched, and it is exactly what makes a synced base diverge. Without
 		// it the row would keep saying "Modify" over a table that no longer matches.
 		const shape = this.plugin.index
-			.getResolvedFields(fcName)
+			.getResolvedFields(fcName, ctx)
 			.filter((f) => isRootField(f))
 			.map((f) => f.name)
 			.join(",");
@@ -326,7 +328,7 @@ export class PropertyEditButtons extends Component {
 		wrapper.dataset.fcState = state;
 		wrapper.append(
 			this.makeActionButton("plus", "Add a field", `Declare a new field on ${fcName}`, () =>
-				openAddFieldTo(this.plugin, fcName)
+				openAddFieldTo(this.plugin, fcName, ctx)
 			),
 			this.makeActionButton(
 				"settings-2",
@@ -334,13 +336,13 @@ export class PropertyEditButtons extends Component {
 				`What ${fcName} extends, excludes, and the notes it claims`,
 				() => new FileClassOptionsModal(this.plugin, fcName, file).open()
 			),
-			this.baseButton(wrapper, state, fcName, base)
+			this.baseButton(wrapper, state, fcName, base, ctx)
 		);
 		// Same rule as the note actions: a button appears when it has somewhere to go.
 		if (base) {
 			wrapper.append(
 				this.makeActionButton("table", "Open the base", `Open ${base.path}`, () =>
-					void openFileClassBase(this.plugin, fcName)
+					void openFileClassBase(this.plugin, fcName, ctx)
 				)
 			);
 		}
@@ -349,7 +351,7 @@ export class PropertyEditButtons extends Component {
 				"replace",
 				"Bulk edit a field",
 				`Set one of ${fcName}'s fields across the notes that carry it`,
-				() => openBulkEdit(this.plugin, fcName)
+				() => openBulkEdit(this.plugin, fcName, ctx)
 			)
 		);
 		add.after(wrapper);
@@ -371,7 +373,8 @@ export class PropertyEditButtons extends Component {
 		wrapper: HTMLElement,
 		state: string,
 		fcName: string,
-		base: TFile | null
+		base: TFile | null,
+		ctx: string
 	): HTMLElement {
 		let diverged = false;
 		const button = this.makeActionButton(
@@ -382,8 +385,8 @@ export class PropertyEditButtons extends Component {
 				: `Generate a base whose table is ${fcName}'s fields`,
 			() => {
 				// Labelled "Sync the base", it syncs — one click, and the notice says what it did.
-				if (!diverged) return pickAndCreateBase(this.plugin, fcName);
-				void syncFileClassToBase(this.plugin, fcName).then((ok) => {
+				if (!diverged) return pickAndCreateBase(this.plugin, fcName, ctx);
+				void syncFileClassToBase(this.plugin, fcName, ctx).then((ok) => {
 					if (!ok || !button.isConnected) return;
 					diverged = false;
 					restore();
@@ -398,7 +401,7 @@ export class PropertyEditButtons extends Component {
 		};
 		if (!base) return button;
 
-		void baseSyncStatus(this.plugin, fcName).then((status) => {
+		void baseSyncStatus(this.plugin, fcName, ctx).then((status) => {
 			// The row may have been rebuilt, or the note left, while the file was read.
 			if (status !== "diverged" || !wrapper.isConnected || wrapper.dataset.fcState !== state) return;
 			diverged = true;
@@ -511,7 +514,7 @@ export class PropertyEditButtons extends Component {
 		const open = (e: Event): void => {
 			e.preventDefault();
 			e.stopPropagation();
-			openFileClassSchema(this.plugin, fcName);
+			openFileClassSchema(this.plugin, fcName, undefined, file.path);
 		};
 		summary.addEventListener("click", open);
 		summary.addEventListener("keydown", (e) => {
@@ -643,7 +646,7 @@ export class PropertyEditButtons extends Component {
 		// Metadata Menu carries **ids** in this key, and `jlBZN1 · JKrPnA · Fnb8cC` names nothing to
 		// anyone. It also counts what actually resolves, so an order left over from fields that are
 		// gone does not claim more than it orders.
-		const order = canonicalFieldOrder(this.plugin.index.getResolvedFields(fcName), stored);
+		const order = canonicalFieldOrder(this.plugin.index.getResolvedFields(fcName, file.path), stored);
 		if (!order.length) return;
 		const state = `${fcName}:${order.join("\u0000")}`;
 		if (valueEl.dataset.fcOrder === state) return; // settled: no new mutation
@@ -659,7 +662,7 @@ export class PropertyEditButtons extends Component {
 		const open = (e: Event): void => {
 			e.preventDefault();
 			e.stopPropagation();
-			openFileClassSchema(this.plugin, fcName);
+			openFileClassSchema(this.plugin, fcName, undefined, file.path);
 		};
 		summary.addEventListener("click", open);
 		summary.addEventListener("keydown", (e) => {
@@ -711,6 +714,8 @@ export class PropertyEditButtons extends Component {
 		if (!key || !alias || key.toLowerCase() !== alias.toLowerCase()) return;
 		const valueEl = row.querySelector<HTMLElement>(":scope > .metadata-property-value");
 		if (!valueEl) return;
+		// The note whose class this row names: a name means the class its scope sees (§10.3).
+		const ctx = this.fileForEl(row) ?? undefined;
 
 		const pills = valueEl.querySelectorAll<HTMLElement>(
 			":scope > .multi-select-container > .multi-select-pill"
@@ -721,7 +726,7 @@ export class PropertyEditButtons extends Component {
 				const remove = pill.querySelector<HTMLElement>(
 					":scope > .multi-select-pill-remove-button"
 				);
-				this.placeClassButton(pill, name, remove);
+				this.placeClassButton(pill, name, remove, ctx);
 			});
 			// A pill removed since the last pass leaves nothing behind: its button
 			// lived inside it.
@@ -730,7 +735,7 @@ export class PropertyEditButtons extends Component {
 		// A text value fills the row, so appending to it would park the button at the
 		// far right edge. It goes in the icon column instead — between the key and
 		// the value, where every other row's control sits.
-		this.placeClassButton(row, valueEl.textContent?.trim() ?? "", valueEl);
+		this.placeClassButton(row, valueEl.textContent?.trim() ?? "", valueEl, ctx);
 	}
 
 	/**
@@ -738,9 +743,14 @@ export class PropertyEditButtons extends Component {
 	 * before `before` when given. Dedup by name so a settled row mutates no
 	 * further — this DOM is watched, and a re-inject on every pass would loop.
 	 */
-	private placeClassButton(host: HTMLElement, name: string, before: HTMLElement | null): void {
+	private placeClassButton(
+		host: HTMLElement,
+		name: string,
+		before: HTMLElement | null,
+		ctx?: TFile
+	): void {
 		const existing = host.querySelector<HTMLElement>(`:scope > .${CLASS_CLASS}`);
-		const known = !!name && !!this.plugin.index.getFileClass(name);
+		const known = !!name && !!this.plugin.index.getFileClass(name, ctx);
 		if (!known) {
 			existing?.remove();
 			return;
@@ -755,7 +765,7 @@ export class PropertyEditButtons extends Component {
 			// Inside a pill, a click would otherwise start editing the value.
 			e.preventDefault();
 			e.stopPropagation();
-			openFileClassSchema(this.plugin, name);
+			openFileClassSchema(this.plugin, name, undefined, ctx);
 		});
 		if (before) host.insertBefore(btn, before);
 		else host.appendChild(btn);

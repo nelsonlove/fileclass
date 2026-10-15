@@ -17,6 +17,7 @@ import { dateFormatDefaults } from "../settings/settings";
 import { mutateFields } from "../schema/fileClassIo";
 import { updateFieldDef } from "../schema/fileClassWrite";
 import { Field } from "../schema/field";
+import type { ClassContext } from "../schema/fileclassIndex";
 import { applyConditional } from "../views/conditionalSync";
 import { FileClassSchemaModal } from "./fileClassSchemaModal";
 import { childPathOf } from "../schema/field";
@@ -30,7 +31,8 @@ import { migrateRenamedField } from "../commands/renameFieldMigration";
 export function writeFieldDependency(
 	plugin: FileclassPlugin,
 	fileClassName: string,
-	result: FieldDefResult
+	result: FieldDefResult,
+	ctx?: ClassContext
 ): void {
 	const o = result.options;
 	if (!o || Array.isArray(o)) return;
@@ -40,7 +42,7 @@ export function writeFieldDependency(
 	const sourceView = typeof o.sourceView === "string" ? o.sourceView : "";
 	if (!baseFile || !source || !match || !sourceView) return;
 	const sourceType =
-		plugin.index.getResolvedFields(fileClassName).find((f) => f.name === source)?.type ?? "Input";
+		plugin.index.getResolvedFields(fileClassName, ctx).find((f) => f.name === source)?.type ?? "Input";
 	void applyConditional(plugin, { baseFile, sourceView, source, sourceType, match });
 }
 
@@ -50,7 +52,10 @@ export function writeFieldDependency(
  */
 export function openFieldSettings(plugin: FileclassPlugin, field: Field): void {
 	const owner = field.fileClassName;
-	const file = plugin.index.getFileClassFile(owner);
+	// The declaring file, when the index recorded it: a name alone may mean another scope's class.
+	const file = field.fileClassPath
+		? plugin.app.vault.getFileByPath(field.fileClassPath)
+		: plugin.index.getFileClassFile(owner);
 	if (!(file instanceof TFile)) {
 		new Notice(`Fileclass: could not find the note for "${owner}".`);
 		return;
@@ -58,7 +63,7 @@ export function openFieldSettings(plugin: FileclassPlugin, field: Field): void {
 	new FieldDefModal(plugin.app, {
 		title: `Edit ${field.name}`,
 		dateDefaults: dateFormatDefaults(plugin.settings),
-		classFields: plugin.index.getResolvedFields(owner),
+		classFields: plugin.index.getResolvedFields(owner, file.path),
 		initial: { name: field.name, type: field.type, options: field.options },
 		onEditChildren: () =>
 			new FileClassSchemaModal(plugin, owner, file, childPathOf(field)).open(),
@@ -66,7 +71,7 @@ export function openFieldSettings(plugin: FileclassPlugin, field: Field): void {
 			void mutateFields(plugin.app, file, (fields) =>
 				updateFieldDef(fields, field.id, { name: r.name, type: r.type, options: r.options })
 			).then(async () => {
-				writeFieldDependency(plugin, owner, r);
+				writeFieldDependency(plugin, owner, r, file.path);
 				// A rename is a data migration (#108): the class note is written, the notes that
 				// carry the old key are listed and rewritten only if the author says so.
 				await migrateRenamedField(plugin, { ...field, name: r.name }, field.name);

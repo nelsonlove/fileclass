@@ -13,6 +13,7 @@
 import { App, Modal, Notice, Setting, parseYaml } from "obsidian";
 
 import type FileclassPlugin from "../../main";
+import type { ClassContext } from "../schema/fileclassIndex";
 import { Field, isRootField } from "../schema/field";
 import { RelatedView } from "../schema/fileClass";
 import { filtersReadFieldBackwards, formatViewRef, linkCardinality, parseViewRef } from "../views/reverseView";
@@ -63,9 +64,9 @@ export async function allBaseViews(app: App): Promise<BaseViewRef[]> {
 }
 
 /** The class's own link fields — the only ones a view can read backwards. */
-function linkFields(plugin: FileclassPlugin, className: string): Field[] {
+function linkFields(plugin: FileclassPlugin, className: string, ctx?: ClassContext): Field[] {
 	return plugin.index
-		.getResolvedFields(className)
+		.getResolvedFields(className, ctx)
 		.filter((f) => isRootField(f) && !!linkCardinality(f.type));
 }
 
@@ -166,9 +167,11 @@ class RelatedViewModal extends Modal {
 export async function editRelatedView(
 	plugin: FileclassPlugin,
 	className: string,
-	entry?: RelatedView
+	entry?: RelatedView,
+	/** Where `className` is read from (§10.3); the class note, from its options. */
+	ctx?: ClassContext
 ): Promise<RelatedView | null> {
-	const fields = linkFields(plugin, className);
+	const fields = linkFields(plugin, className, ctx);
 	if (!fields.length) {
 		new Notice(`Fileclass: ${className} has no link field, so no view can read one of them backwards.`);
 		return null;
