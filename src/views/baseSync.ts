@@ -22,6 +22,7 @@ import {
 } from "obsidian";
 
 import type FileclassPlugin from "../../main";
+import type { ClassContext, ClassEntry } from "../schema/fileclassIndex";
 import { logEvent } from "../log/schemaLog";
 import { isRootField } from "../schema/field";
 import { FileClassOptions, parseFileClass } from "../schema/fileClass";
@@ -31,8 +32,12 @@ import { hasView } from "./reverseView";
 export type BaseSyncStatus = "none" | "synced" | "diverged";
 
 /** fileClass options read fresh from the note (the index is debounced). */
-function liveOptions(plugin: FileclassPlugin, name: string): FileClassOptions | undefined {
-	const file = plugin.index.getFileClassFile(name);
+function liveOptions(
+	plugin: FileclassPlugin,
+	name: string,
+	ctx?: ClassContext
+): FileClassOptions | undefined {
+	const file = plugin.index.getFileClassFile(name, ctx);
 	if (!file) return undefined;
 	return parseFileClass(name, plugin.app.metadataCache.getFileCache(file)?.frontmatter).options;
 }
@@ -42,8 +47,8 @@ function liveOptions(plugin: FileclassPlugin, name: string): FileClassOptions | 
  * tag that binds a note to this class. Read live, like the rest of `liveOptions`
  * — a class mapped to a folder a second ago must produce a view that sees it.
  */
-export function classScope(plugin: FileclassPlugin, name: string): ClassScope {
-	const options = liveOptions(plugin, name);
+export function classScope(plugin: FileclassPlugin, name: string, ctx?: ClassContext): ClassScope {
+	const options = liveOptions(plugin, name, ctx);
 	const tags = [...(options?.tagNames ?? [])];
 	// `mapWithTag` means the class name itself is the tag (single-word only).
 	if (options?.mapWithTag && !name.includes(" ")) tags.push(name);
@@ -56,8 +61,8 @@ export function classScope(plugin: FileclassPlugin, name: string): ClassScope {
 }
 
 /** Managed view name for a fileClass (its `baseView`, else its own name). */
-export function managedViewName(plugin: FileclassPlugin, name: string): string {
-	return liveOptions(plugin, name)?.baseView?.trim() || name;
+export function managedViewName(plugin: FileclassPlugin, name: string, ctx?: ClassContext): string {
+	return liveOptions(plugin, name, ctx)?.baseView?.trim() || name;
 }
 
 /**
@@ -70,26 +75,49 @@ export function managedViewName(plugin: FileclassPlugin, name: string): string {
  * ask whether another one already has — two classes mirroring into the same view would
  * overwrite each other's columns on every sync, quietly, forever.
  *
- * `except` is the class doing the asking, so it never collides with itself.
+ * `except` is the class doing the asking (its name, read from `exceptCtx`), so it never collides
+ * with itself. Every class is asked, scoped ones included: one view holds one class's columns.
  */
 export function fileClassClaimingView(
 	plugin: FileclassPlugin,
 	basePath: string,
 	viewName: string,
-	except?: string
+	except?: string,
+	exceptCtx?: ClassContext
 ): string | undefined {
+	return classClaimingView(plugin, basePath, viewName, except, exceptCtx)?.name;
+}
+
+/** `fileClassClaimingView`, answering with the class's file and scope too (§10.3). */
+export function classClaimingView(
+	plugin: FileclassPlugin,
+	basePath: string,
+	viewName: string,
+	except?: string,
+	exceptCtx?: ClassContext
+): ClassEntry | undefined {
 	const wanted = normalizePath(basePath);
-	return plugin.index.fileClassNames.find((name) => {
-		if (name === except) return false;
-		const declared = liveOptions(plugin, name)?.baseFile?.trim();
-		if (!declared || normalizePath(declared) !== wanted) return false;
-		return managedViewName(plugin, name) === viewName;
-	});
+	const self = except ? plugin.index.resolveClass(except, exceptCtx) : undefined;
+	const found = plugin.index
+		.allClasses()
+		// The root's first, in their own order, so a root-only vault answers as it always has.
+		.sort((a, b) => Number(b.scope === "") - Number(a.scope === ""))
+		.find(({ name, path }) => {
+			if (path === self || (self === undefined && name === except)) return false;
+			const declared = liveOptions(plugin, name, path)?.baseFile?.trim();
+			if (!declared || normalizePath(declared) !== wanted) return false;
+			return managedViewName(plugin, name, path) === viewName;
+		});
+	return found;
 }
 
 /** The fileClass's declared base file, if it is set and exists in the vault. */
-export function fileClassBaseFile(plugin: FileclassPlugin, name: string): TFile | null {
-	const baseFile = liveOptions(plugin, name)?.baseFile?.trim();
+export function fileClassBaseFile(
+	plugin: FileclassPlugin,
+	name: string,
+	ctx?: ClassContext
+): TFile | null {
+	const baseFile = liveOptions(plugin, name, ctx)?.baseFile?.trim();
 	if (!baseFile) return null;
 	const file = plugin.app.vault.getFileByPath(normalizePath(baseFile));
 	return file instanceof TFile ? file : null;
@@ -106,8 +134,12 @@ export function fileClassBaseFile(plugin: FileclassPlugin, name: string): TFile 
  * synced names a view that does not exist, and asking Bases for it would be asking for an error
  * instead of a base.
  */
-export async function openFileClassBase(plugin: FileclassPlugin, name: string): Promise<void> {
-	const file = fileClassBaseFile(plugin, name);
+export async function openFileClassBase(
+	plugin: FileclassPlugin,
+	name: string,
+	ctx?: ClassContext
+): Promise<void> {
+	const file = fileClassBaseFile(plugin, name, ctx);
 	if (!file) {
 		new Notice(`Fileclass: "${name}" has no base yet.`);
 		return;
@@ -115,7 +147,7 @@ export async function openFileClassBase(plugin: FileclassPlugin, name: string): 
 	const leaf = plugin.app.workspace.getLeaf("tab");
 	await leaf.openFile(file);
 
-	const viewName = managedViewName(plugin, name);
+	const viewName = managedViewName(plugin, name, ctx);
 	try {
 		const base = (parseYaml(await plugin.app.vault.read(file)) ?? {}) as Record<string, unknown>;
 		if (!hasView(base, viewName)) return;
@@ -125,16 +157,20 @@ export async function openFileClassBase(plugin: FileclassPlugin, name: string): 
 	await leaf.setViewState({ type: "bases", state: { file: file.path, viewName } });
 }
 
-function rootFieldNames(plugin: FileclassPlugin, name: string): string[] {
+function rootFieldNames(plugin: FileclassPlugin, name: string, ctx?: ClassContext): string[] {
 	return plugin.index
-		.getResolvedFields(name)
+		.getResolvedFields(name, ctx)
 		.filter((f) => isRootField(f))
 		.map((f) => f.name);
 }
 
 /** Reports whether the managed view still mirrors the fileClass's fields. */
-export async function baseSyncStatus(plugin: FileclassPlugin, name: string): Promise<BaseSyncStatus> {
-	const baseFile = liveOptions(plugin, name)?.baseFile?.trim();
+export async function baseSyncStatus(
+	plugin: FileclassPlugin,
+	name: string,
+	ctx?: ClassContext
+): Promise<BaseSyncStatus> {
+	const baseFile = liveOptions(plugin, name, ctx)?.baseFile?.trim();
 	if (!baseFile) return "none";
 	const file = plugin.app.vault.getFileByPath(normalizePath(baseFile));
 	if (!(file instanceof TFile)) return "diverged"; // missing → needs sync (create)
@@ -142,9 +178,9 @@ export async function baseSyncStatus(plugin: FileclassPlugin, name: string): Pro
 		const base: unknown = parseYaml(await plugin.app.vault.read(file));
 		return isBaseViewSynced(
 			base,
-			managedViewName(plugin, name),
-			rootFieldNames(plugin, name),
-			classScope(plugin, name)
+			managedViewName(plugin, name, ctx),
+			rootFieldNames(plugin, name, ctx),
+			classScope(plugin, name, ctx)
 		)
 			? "synced"
 			: "diverged";
@@ -162,11 +198,12 @@ export async function applyBaseSync(
 	plugin: FileclassPlugin,
 	name: string,
 	path: string,
-	view: string
+	view: string,
+	ctx?: ClassContext
 ): Promise<void> {
 	const app = plugin.app;
-	const fields = rootFieldNames(plugin, name);
-	const scope = classScope(plugin, name);
+	const fields = rootFieldNames(plugin, name, ctx);
+	const scope = classScope(plugin, name, ctx);
 	const file = app.vault.getFileByPath(path);
 
 	if (!(file instanceof TFile)) {
@@ -288,13 +325,17 @@ export function confirmCloseOpenBase(app: App, fileName: string): Promise<boolea
  * Re-applies the mirror using the fileClass's saved options (creating the base
  * if missing). One-way; returns true on success.
  */
-export async function syncFileClassToBase(plugin: FileclassPlugin, name: string): Promise<boolean> {
-	const baseFile = liveOptions(plugin, name)?.baseFile?.trim();
+export async function syncFileClassToBase(
+	plugin: FileclassPlugin,
+	name: string,
+	ctx?: ClassContext
+): Promise<boolean> {
+	const baseFile = liveOptions(plugin, name, ctx)?.baseFile?.trim();
 	if (!baseFile) {
 		new Notice("Fileclass: no base is set for this fileClass.");
 		return false;
 	}
-	await applyBaseSync(plugin, name, normalizePath(baseFile), managedViewName(plugin, name));
+	await applyBaseSync(plugin, name, normalizePath(baseFile), managedViewName(plugin, name, ctx), ctx);
 	return true;
 }
 

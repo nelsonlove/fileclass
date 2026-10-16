@@ -17,7 +17,9 @@ import { displayValue } from "../fields/display";
 import { EditContext, promptFieldValue } from "../fields/fieldActions";
 import { logEvent } from "../log/schemaLog";
 import { Field, isRootField } from "../schema/field";
+import type { ClassContext, ClassEntry } from "../schema/fileclassIndex";
 import { BaseFileSuggest, BaseViewSuggest } from "./baseSuggest";
+import { classLabel, sortClasses } from "./classPicker";
 import { makeStickyFooter } from "./modalFooter";
 import { modalTitle } from "./modalTitle";
 
@@ -34,6 +36,8 @@ const OPS_WITH_VALUE: FilterOp[] = ["is", "isNot", "contains"];
 
 export class BulkEditModal extends Modal {
 	private fileClass: string;
+	/** The class file of `fileClass`: a name alone may mean several classes (§10.3). */
+	private classPath: string;
 	private filterMode: FilterMode = "none";
 	private condField = "";
 	private condOp: FilterOp = "is";
@@ -44,10 +48,27 @@ export class BulkEditModal extends Modal {
 	private value: unknown;
 	private valueSet = false;
 
-	constructor(private readonly plugin: FileclassPlugin, initialFileClass?: string) {
+	constructor(
+		private readonly plugin: FileclassPlugin,
+		initialFileClass?: string,
+		/** Where `initialFileClass` is read from; none means the root's class. */
+		ctx?: ClassContext
+	) {
 		super(plugin.app);
-		const names = plugin.index.fileClassNames;
-		this.fileClass = initialFileClass && names.includes(initialFileClass) ? initialFileClass : names[0] ?? "";
+		const initial = initialFileClass ? plugin.index.resolveClass(initialFileClass, ctx) : undefined;
+		// With no class asked for, the root's first, as before; a vault of scoped classes only, the first.
+		const rootFirst = plugin.index.fileClassNames[0];
+		const first =
+			initial ??
+			(rootFirst ? plugin.index.resolveClass(rootFirst) : undefined) ??
+			sortClasses(plugin.index.allClasses())[0]?.path ??
+			"";
+		this.classPath = first;
+		this.fileClass = this.entry()?.name ?? "";
+	}
+
+	private entry(): ClassEntry | undefined {
+		return this.plugin.index.allClasses().find((c) => c.path === this.classPath);
 	}
 
 	onOpen(): void {
@@ -61,7 +82,7 @@ export class BulkEditModal extends Modal {
 	/** Root fields of the current fileClass (both the filter and the target use them). */
 	private rootFields(): Field[] {
 		return this.fileClass
-			? this.plugin.index.getResolvedFields(this.fileClass).filter((f) => isRootField(f))
+			? this.plugin.index.getResolvedFields(this.fileClass, this.classPath).filter((f) => isRootField(f))
 			: [];
 	}
 
@@ -70,7 +91,7 @@ export class BulkEditModal extends Modal {
 	}
 
 	private buildScope(): BulkScope {
-		const scope: BulkScope = { fileClass: this.fileClass };
+		const scope: BulkScope = { fileClass: this.fileClass, scope: this.classPath };
 		if (this.filterMode === "condition" && this.condField) {
 			const filter: Filter = { field: this.condField, op: this.condOp };
 			if (OPS_WITH_VALUE.includes(this.condOp)) filter.value = this.condValue;
@@ -87,16 +108,17 @@ export class BulkEditModal extends Modal {
 		contentEl.empty();
 		modalTitle(contentEl, "Bulk edit a field");
 
-		const names = this.plugin.index.fileClassNames;
-		if (!names.length) {
+		const classes = sortClasses(this.plugin.index.allClasses());
+		if (!classes.length) {
 			contentEl.createEl("p", { text: "No fileClasses are defined." });
 			return;
 		}
 
 		new Setting(contentEl).setName("Fileclass").addDropdown((d) => {
-			for (const n of [...names].sort()) d.addOption(n, n);
-			d.setValue(this.fileClass).onChange((v) => {
-				this.fileClass = v;
+			for (const c of classes) d.addOption(c.path, classLabel(c));
+			d.setValue(this.classPath).onChange((v) => {
+				this.classPath = v;
+				this.fileClass = this.entry()?.name ?? "";
 				this.field = "";
 				this.condField = "";
 				this.valueSet = false;
@@ -201,7 +223,7 @@ export class BulkEditModal extends Modal {
 		const ctx: EditContext = {
 			host: this.plugin,
 			file,
-			allFields: this.plugin.index.getResolvedFields(this.fileClass),
+			allFields: this.plugin.index.getResolvedFields(this.fileClass, this.classPath),
 		};
 		void promptFieldValue(ctx, field, this.value, (v) => {
 			this.value = v;
@@ -214,8 +236,8 @@ export class BulkEditModal extends Modal {
 	private representativeFile(): TFile | null {
 		const bound = this.app.vault
 			.getMarkdownFiles()
-			.find((f) => this.plugin.index.getFileClasses(f).includes(this.fileClass));
-		return bound ?? this.plugin.index.getFileClassFile(this.fileClass) ?? null;
+			.find((f) => this.plugin.index.bindsClass(f, this.fileClass, this.classPath));
+		return bound ?? this.plugin.index.getFileClassFile(this.fileClass, this.classPath) ?? null;
 	}
 
 	private renderFooter(contentEl: HTMLElement): void {
@@ -375,10 +397,10 @@ class BulkPreviewModal extends Modal {
 }
 
 /** Opens the bulk-edit modal, optionally pre-selecting a fileClass. */
-export function openBulkEdit(plugin: FileclassPlugin, fileClass?: string): void {
-	if (!plugin.index.fileClassNames.length) {
+export function openBulkEdit(plugin: FileclassPlugin, fileClass?: string, ctx?: ClassContext): void {
+	if (!plugin.index.allClasses().length) {
 		new Notice("Fileclass: no fileClasses defined.");
 		return;
 	}
-	new BulkEditModal(plugin, fileClass).open();
+	new BulkEditModal(plugin, fileClass, ctx).open();
 }

@@ -145,10 +145,16 @@ export class NoteFieldsModal extends Modal {
 		const origins = this.plugin.index.getBindingOrigins(this.file);
 		for (const name of names) {
 			const crumb = footer.createDiv({ cls: "fileclass-breadcrumb" });
-			// Root → leaf: ancestors are nearest-first, so reverse then add self.
-			const chain = [...this.plugin.index.getAncestors(name)].reverse();
-			chain.push(name);
-			chain.forEach((cls, i) => {
+			// Root → leaf: ancestors are nearest-first, so reverse then add self. By class file, so a
+			// scope's class that shadows the root's opens itself, and its ancestor opens the root's
+			// (§10.3); a parent that names no class stays as its bare name.
+			const index = this.plugin.index;
+			const self = index.resolveClass(name, this.file);
+			const paths = [...index.getAncestorPaths(name, this.file)].reverse();
+			if (self) paths.push(self);
+			const chain = self ? paths : [name];
+			chain.forEach((ref, i) => {
+				const cls = index.fileClassNameOfNote(ref) ?? ref;
 				if (i > 0) crumb.createSpan({ cls: "fileclass-breadcrumb-sep", text: "›" });
 				const link = crumb.createEl("a", {
 					cls: "fileclass-breadcrumb-item",
@@ -158,7 +164,7 @@ export class NoteFieldsModal extends Modal {
 				link.dataset.fcClass = cls; // so a hovered row can find the class it comes from
 				link.addEventListener("click", (e) => {
 					e.preventDefault();
-					openFileClassSchema(this.plugin, cls, () => this.close());
+					openFileClassSchema(this.plugin, cls, () => this.close(), index.isFileClassNote(ref) ? ref : this.file);
 				});
 				// Hovering a fileClass marks the rows of the fields it declares.
 				link.addEventListener("mouseenter", () => this.highlightOwner(cls));

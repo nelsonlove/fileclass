@@ -19,6 +19,7 @@ import {
 	schemaArchiveCount,
 	schemaLogPath,
 } from "../log/schemaLog";
+import { parseClassRef } from "../schema/classRef";
 import { runSchemaAudit } from "../schema/schemaAuditRun";
 import { openFileClassSchema } from "./fileClassSchemaModal";
 import { makeStickyFooter } from "./modalFooter";
@@ -172,11 +173,16 @@ class SchemaLogModal extends Modal {
 		setIcon(action, "wrench");
 		action.setAttribute("aria-label", `Open ${fileClass}`);
 		action.addEventListener("click", () => {
-			if (!this.plugin.index.getFileClassFile(fileClass)) {
+			// A scoped class's line carries its file (classRef.ts); a root class's, its name.
+			const { name, path } = parseClassRef(fileClass);
+			// A scoped line whose class file is gone says so: read from a missing path, the name
+			// would fall back to the root's class of the same name.
+			const gone = path !== undefined && !this.plugin.index.isFileClassNote(path);
+			if (gone || !this.plugin.index.getFileClassFile(name, path)) {
 				new Notice(`Fileclass: "${fileClass}" no longer exists.`);
 				return;
 			}
-			openFileClassSchema(this.plugin, fileClass);
+			openFileClassSchema(this.plugin, name, undefined, path);
 			this.close();
 		});
 	}

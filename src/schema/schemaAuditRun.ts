@@ -13,6 +13,7 @@ import { Notice, TFile, TFolder } from "obsidian";
 import type FileclassPlugin from "../../main";
 import { LogEntry, logStamp } from "../log/logLine";
 import { logEvents, readSchemaLog } from "../log/schemaLog";
+import { classRef } from "./classRef";
 import { isRootField } from "./field";
 import {
 	AuditWorld,
@@ -25,45 +26,71 @@ import {
 	fingerprint,
 } from "./schemaAudit";
 
-/** The classes as the audit reads them, straight from the parsed schema. */
-function auditedClasses(plugin: FileclassPlugin): AuditedClass[] {
-	const out: AuditedClass[] = [];
-	for (const name of plugin.index.fileClassNames) {
-		const parsed = plugin.index.getFileClass(name);
+/** One class as the audit reads it, straight from the parsed schema, with its file. */
+interface AuditedEntry {
+	cls: AuditedClass;
+	path: string;
+	scope: string;
+}
+
+/**
+ * Every class as the audit reads it — the root's, then each scope's (§10.3) — straight from the
+ * parsed schema.
+ */
+function auditedClasses(plugin: FileclassPlugin): AuditedEntry[] {
+	const out: AuditedEntry[] = [];
+	const entries = plugin.index.allClasses();
+	// The root's first, in the index's own order: a vault with no scopes reports as it always did.
+	const ordered = [...entries.filter((e) => e.scope === ""), ...entries.filter((e) => e.scope !== "")];
+	for (const { name, path, scope } of ordered) {
+		const parsed = plugin.index.getFileClassByPath(path);
 		if (!parsed) continue;
 		out.push({
-			name,
-			extends: parsed.options.extends,
-			excludes: parsed.options.excludes,
-			mapWithTag: parsed.options.mapWithTag,
-			tagNames: parsed.options.tagNames,
-			filesPaths: parsed.options.filesPaths,
-			baseFile: parsed.options.baseFile,
-			// Own fields: an inherited one belongs to the class that declared it, and reporting it
-			// on every child would turn one broken path into a list of them.
-			fields: parsed.fields.map((f) => ({
-				name: f.name,
-				options: (typeof f.options === "object" && !Array.isArray(f.options) ? f.options : {}) as Record<
-					string,
-					unknown
-				>,
-			})),
+			path,
+			scope,
+			cls: {
+				name,
+				extends: parsed.options.extends,
+				excludes: parsed.options.excludes,
+				mapWithTag: parsed.options.mapWithTag,
+				tagNames: parsed.options.tagNames,
+				filesPaths: parsed.options.filesPaths,
+				baseFile: parsed.options.baseFile,
+				// Own fields: an inherited one belongs to the class that declared it, and reporting it
+				// on every child would turn one broken path into a list of them.
+				fields: parsed.fields.map((f) => ({
+					name: f.name,
+					options: (typeof f.options === "object" && !Array.isArray(f.options) ? f.options : {}) as Record<
+						string,
+						unknown
+					>,
+				})),
+			},
 		});
 	}
 	return out;
 }
 
-function world(plugin: FileclassPlugin): AuditWorld {
+/**
+ * The vault as one class sees it: `extends` resolves from the class's own scope upward (§10.3), so
+ * the names it may extend are those its scope sees.
+ */
+function world(plugin: FileclassPlugin, classPath: string, name: string, scope: string): AuditWorld {
+	const index = plugin.index;
+	const reachable = new Set(index.fileClassNamesFor(classPath));
+	// A scoped class never extends itself: its own name reaches a class only further up. (A root
+	// class keeps today's reading, where naming itself is not a missing parent.)
+	if (scope && !index.resolveParent(name, classPath)) reachable.delete(name);
 	return {
 		fileExists: (path) => plugin.app.vault.getAbstractFileByPath(path) instanceof TFile,
 		folderExists: (path) => plugin.app.vault.getAbstractFileByPath(path) instanceof TFolder,
-		knownClasses: new Set(plugin.index.fileClassNames),
+		knownClasses: reachable,
 		// The whole chain's own fields, which is what this class inherits and therefore what its
 		// `excludes` may name — the direct parent alone flagged a grandparent's field as a mistake.
-		inheritedFieldNames: (name) =>
-			plugin.index
-				.getAncestors(name)
-				.flatMap((ancestor) => plugin.index.getFileClass(ancestor)?.fields ?? [])
+		inheritedFieldNames: () =>
+			index
+				.ancestorPathsOf(classPath)
+				.flatMap((ancestor) => index.getFileClassByPath(ancestor)?.fields ?? [])
 				.filter((f) => isRootField(f))
 				.map((f) => f.name),
 	};
@@ -71,8 +98,13 @@ function world(plugin: FileclassPlugin): AuditWorld {
 
 /** Every problem the vault's schemas have right now. */
 export function auditSchemas(plugin: FileclassPlugin): Finding[] {
-	const w = world(plugin);
-	return auditedClasses(plugin).flatMap((cls) => auditClass(cls, w));
+	return auditedClasses(plugin).flatMap(({ cls, path, scope }) => {
+		const findings = auditClass(cls, world(plugin, path, cls.name, scope));
+		// A scoped class is named with its file, so two classes of one name are two problems in the
+		// log, each logged and resolved on its own (§10.3). A root class keeps its bare name.
+		const ref = classRef(cls.name, path, scope);
+		return ref === cls.name ? findings : findings.map((f) => ({ ...f, fileClass: ref }));
+	});
 }
 
 /**

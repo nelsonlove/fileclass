@@ -61,7 +61,13 @@ Off by default. Turn on **Settings → Fileclass → Scoped classes** and a **sc
 
 **Tags, folders and bookmarks.** A scoped class's `mapWithTag`, `tagNames`, `filesPaths` and `bookmarksGroups` claim only notes inside its scope, and inside it they win over a root class that claims the same tag, folder or group. Outside every scope, the root's classes claim what they always claimed.
 
-**What does not change yet.** With the setting on, every root class binds the notes it bound before, except inside a scope that shadows its name or claims the same tag, folder or bookmark group. The accessors that take a bare class name (the schema editor, the bulk edit, the API and the CLI) still mean the root's class, so a class that exists only in a scope is not offered by **Add a class**, opens no schema editor, and shows the default icon; a scope parameter on them is the next step.
+**A class name and its context.** Everywhere a class name is used, the place it is read from says which class it means. A note's own panels (the note-fields modal, the property buttons, the indicator, **Add a class**) read from the note, so **Add a class** offers the classes its scope sees, a scope's own included. A class note's panels (the schema editor, its options, its right-click menu) read from the class note itself, so a scoped class edits its own definition. Every class picker (*Edit a class schema*, *Create a base*, *Bulk edit*, *Create a note with a class*) lists every class, and shows a scoped one with its scope's folder (`Score — 70-79 Hobbies`). A table reads its classes from the class that declared it, else from its base's folder, else from its rows.
+
+**With the setting on, what still reads only the root's classes:** the reverse relations (*Insert notes that point here*, *Use this view for a relation*), the schema canvas and the **global class** setting. The schema log covers scoped classes for the audit (*Check what my classes point at*) and the rename warnings: a scoped class is written as `Name @ path/to/Name.md`, so two classes of one name are told apart and the line's wrench opens the right one. Other log lines (bulk edits, base syncs) name a class by name only, and their wrench opens the root's class of that name. With the setting off, every name means the root's class, as before.
+
+**Creating a scoped class.** With the setting on, **Create a class** first asks for the scope (the active note's first, then the root, then every scope), and writes the class into that scope's classes folder, making the folder when the pattern names one under an existing `.03` slot. The new note carries `type: Meta/Fileclass` (under your class key), which is what makes it a class there. Right-clicking any classes folder offers **Create a class** in that folder, without the question.
+
+**A scoped class's base.** A scoped class has no default in the root's bases folder: the base dialog offers `<scope>/<NN>.07 …/bases/generated/<Class>.base` when that folder exists (an area uses its management category's), and an empty path otherwise. A base for a scoped class is refused inside a classes folder.
 
 ## Fields
 
@@ -233,7 +239,8 @@ fields**, so the note arrives typed and empty rather than bound and bare. Turn
 binding alone and insert them yourself.
 
 A fileClass note can also be created from the **class-files folder's right-click
-menu** (*Create a class*), not only from the command palette.
+menu** (*Create a class*), not only from the command palette. With
+[scoped classes](#scoped-classes) on, every scope's classes folder offers it too.
 
 ## Creating a note with a class
 

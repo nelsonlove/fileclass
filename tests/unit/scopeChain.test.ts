@@ -4,6 +4,7 @@ import {
 	areaDigit,
 	chainOf,
 	classesFoldersOf,
+	classesFolderToCreate,
 	isFolderNote,
 	isScopeNote,
 	linkTarget,
@@ -217,5 +218,42 @@ describe("patterns and links", () => {
 		expect(linkTarget(["[[A]]"])).toBe("A");
 		expect(linkTarget("A/B")).toBe("A/B");
 		expect(linkTarget(3)).toBeUndefined();
+	});
+});
+
+describe("classesFolderToCreate", () => {
+	it("an existing classes folder first; an area's is its management category's", () => {
+		const v = new FakeVault({
+			"70-79 Hobbies/70-79 Hobbies.md": { type: "Meta/Scope/Area" },
+			"70-79 Hobbies/70 Management/70 Management.md": { type: "Meta/Scope/Category" },
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes/classes.md": {},
+		});
+		expect(classesFolderToCreate("70-79 Hobbies/70 Management/70 Management.md", v.host(), settings, segments)).toBe(
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes"
+		);
+		expect(classesFolderToCreate("70-79 Hobbies/70-79 Hobbies.md", v.host(), settings, segments)).toBe(
+			"70-79 Hobbies/70 Management/70.03 Shapes/classes"
+		);
+	});
+
+	it("else the folder the pattern names below an existing slot", () => {
+		const v = new FakeVault({
+			"30 New/30 New.md": { type: "Meta/Scope/Category" },
+			"30 New/30.03 Shapes/30.03 Shapes.md": { type: "Meta/Slot/Shapes" },
+		});
+		expect(classesFolderToCreate("30 New/30 New.md", v.host(), settings, segments)).toBe("30 New/30.03 Shapes/classes");
+	});
+
+	it("nothing without a slot, with a classes key naming no folder, or with an expression last", () => {
+		const v = new FakeVault({
+			"31 Bare/31 Bare.md": { type: "Meta/Scope/Category" },
+			"32 Keyed/32 Keyed.md": { type: "Meta/Scope/Category", classes: "32 Keyed/missing" },
+			"32 Keyed/32.03 Shapes/32.03 Shapes.md": {},
+		});
+		expect(classesFolderToCreate("31 Bare/31 Bare.md", v.host(), settings, segments)).toBeUndefined();
+		expect(classesFolderToCreate("32 Keyed/32 Keyed.md", v.host(), settings, segments)).toBeUndefined();
+		const loose = parsePattern("\\d\\d\\.03 .*/class.*").segments;
+		const w = new FakeVault({ "33 X/33 X.md": {}, "33 X/33.03 Shapes/s.md": {} });
+		expect(classesFolderToCreate("33 X/33 X.md", w.host(), settings, loose)).toBeUndefined();
 	});
 });

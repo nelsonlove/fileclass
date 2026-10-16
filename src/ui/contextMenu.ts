@@ -63,13 +63,18 @@ export class FileclassContextMenu extends Component {
 	 */
 	private buildClassFolderMenu(menu: Menu, folder: TFolder): void {
 		if (!this.plugin.settings.enableContextMenu) return;
-		if (!isClassFolder(folder.path, this.plugin.settings.classFilesPath)) return;
+		const root = isClassFolder(folder.path, this.plugin.settings.classFilesPath);
+		// Any scope's classes folder too (§10.3): the class goes where it was asked for.
+		const scoped = !root && this.plugin.index.scopedClassesFolders().includes(folder.path);
+		if (!root && !scoped) return;
 		menu.addItem((entry) =>
 			entry
 				.setTitle("Create a class")
 				.setIcon("file-spreadsheet")
-				.onClick(() => createFileClass(this.plugin))
+				.onClick(() => createFileClass(this.plugin, { folder: folder.path }))
 		);
+		// The canvas draws the root's classes; it stays on the root's folder.
+		if (!root) return;
 		// The model these classes make is not visible anywhere else (#149).
 		menu.addItem((entry) =>
 			entry
@@ -85,45 +90,46 @@ export class FileclassContextMenu extends Component {
 		// On a fileClass note: only schema actions. Elsewhere: only note actions.
 		const fcName = this.plugin.index.fileClassNameOfNote(file.path);
 		if (fcName) {
-			this.buildFileClassMenu(menu, fcName);
+			this.buildFileClassMenu(menu, fcName, file.path);
 		} else {
 			this.buildNoteMenu(menu, file);
 		}
 	}
 
-	private buildFileClassMenu(menu: Menu, fcName: string): void {
+	/** `ctx` is the class note itself: a scoped class acts on its own definition (§10.3). */
+	private buildFileClassMenu(menu: Menu, fcName: string, ctx: string): void {
 		menu.addItem((item) =>
 			item
 				.setTitle("Manage this fileClass")
 				.setIcon("wrench")
-				.onClick(() => openFileClassSchema(this.plugin, fcName))
+				.onClick(() => openFileClassSchema(this.plugin, fcName, undefined, ctx))
 		);
-		const hasBase = !!fileClassBaseFile(this.plugin, fcName);
+		const hasBase = !!fileClassBaseFile(this.plugin, fcName, ctx);
 		menu.addItem((item) =>
 			item
 				.setTitle(hasBase ? "Modify base for this fileClass" : "Create a base for this fileClass")
 				.setIcon("layout-grid")
-				.onClick(() => pickAndCreateBase(this.plugin, fcName))
+				.onClick(() => pickAndCreateBase(this.plugin, fcName, ctx))
 		);
 		if (hasBase) {
 			menu.addItem((item) =>
 				item
 					.setTitle("Open base for this fileClass")
 					.setIcon("table")
-					.onClick(() => void openFileClassBase(this.plugin, fcName))
+					.onClick(() => void openFileClassBase(this.plugin, fcName, ctx))
 			);
 		}
 		menu.addItem((item) =>
 			item
 				.setTitle("Insert missing fields across this fileClass")
 				.setIcon("list-plus")
-				.onClick(() => void bulkInsertMissingFields(this.plugin, fcName))
+				.onClick(() => void bulkInsertMissingFields(this.plugin, fcName, ctx))
 		);
 		menu.addItem((item) =>
 			item
 				.setTitle("Bulk edit a field of this fileClass")
 				.setIcon("replace")
-				.onClick(() => openBulkEdit(this.plugin, fcName))
+				.onClick(() => openBulkEdit(this.plugin, fcName, ctx))
 		);
 	}
 
@@ -187,7 +193,7 @@ export class FileclassContextMenu extends Component {
 				item
 					.setTitle(`Open ${name} schema`)
 					.setIcon("wrench")
-					.onClick(() => openFileClassSchema(this.plugin, name))
+					.onClick(() => openFileClassSchema(this.plugin, name, undefined, file))
 			);
 		}
 	}

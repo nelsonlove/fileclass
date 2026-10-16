@@ -30,28 +30,39 @@ values — never `TFile` or field objects with methods); mutations return
 | Method | Purpose |
 |--------|---------|
 | `vaultInfo()` | vault name + absolute path |
-| `listFileClasses()` | every fileClass (extends, field count, icon, `hasBase`) |
-| `getSchema(fileClass)` | options + resolved fields (with ancestry) |
-| `explain(path)` | a note's fileClasses, ancestry, and resolved field values |
+| `listFileClasses(scope?)` | every fileClass a scope sees (path, scope, extends, field count, icon, `hasBase`) |
+| `getSchema(fileClass, scope?)` | options + resolved fields (with ancestry, path and scope) |
+| `explain(path)` | a note's fileClasses, each one's class file (`classPaths`), ancestry, and resolved field values |
 | `getFields(path)` / `getValue(path, field)` | fields on a note / one value |
 | `allowedValues(path, field)` | resolved allowed values for a choice field |
 | `fileCandidates(path, field)` | link candidates for a File/Media field |
-| `listNotes(fileClass, { columns?, where?, limit? })` | rows for a fileClass |
-| `baseTable(fileClass)` | the fileClass's base view as columns/rows |
-| `openSchema(fileClass)` | open the schema editor in the Obsidian window |
-| `validate(scope?)` | schema violations for a fileClass / path / folder / vault |
+| `listNotes(fileClass, { scope?, columns?, where?, limit? })` | rows for a fileClass |
+| `baseTable(fileClass, scope?)` | the fileClass's base view as columns/rows |
+| `openSchema(fileClass, scope?)` | open the schema editor in the Obsidian window |
+| `validate({ fileClass?, scope?, path?, folder? })` | schema violations for a fileClass / path / folder / vault |
 | `setValue(path, field, value)` | **validated** single write |
 | `clearValue(path, field)` | remove a field's key |
 | `insertMissing(path)` | add missing fields to a note (which fields those are follows the [**Insert only required fields**](../settings/) setting, as every other insertion does) |
-| `setValueWhere(fileClass, field, value, where?)` | validated bulk write |
+| `setValueWhere(fileClass, field, value, where?, scope?)` | validated bulk write |
 
 `setValue` and `setValueWhere` validate before writing and refuse an invalid
 value; `setValueWhere` also **skips** notes already at the target value (no
 churn) and reports `{ changed, skipped, errors }`. Bases-dependent methods
 degrade gracefully (return `null` / `[]`) when Bases is unavailable.
 
-The API is **versioned** (`api.version`, currently `1.0`); breaking changes bump
+The API is **versioned** (`api.version`, currently `1.2`); breaking changes bump
 it. The plugin driving the CLI must be recent enough to expose `plugin.api`.
+
+**The `scope` argument (1.2).** With [scoped classes](../schema/#scoped-classes)
+on, a class name means the nearest class that gives it, up a scope chain. The
+optional `scope` says where the name is read from: a scope note's path, a note's
+path (its scope), a class file's path (that class's own scope) or a folder's.
+Omitted, the name means the root's class, as before 1.2. A `scope` that names
+nothing in the vault is refused: thrown by a read, returned as `{ ok: false }`
+by a write. `listNotes`, `validate --fileclass` and `setValueWhere` select the
+notes that carry *that* class: a note in a scope that shadows the name carries
+the shadow, not the class asked for. `BulkScope` (`previewValueWhere`,
+`applyValueWhere`) takes the same `scope`.
 
 > **⚠️ Mutating methods write to disk.** `setValue`, `clearValue`,
 > `insertMissing` and `setValueWhere` change note frontmatter in the live vault.
@@ -101,6 +112,12 @@ fileclass validate --fileclass Book
 # bulk edit (dry-run unless --apply)
 fileclass set-where Book status "to read" --where "status isEmpty" --apply
 ```
+
+With [scoped classes](../schema/#scoped-classes), `fileclasses`, `schema`, `list`,
+`validate --fileclass` and `set-where` take `--scope <path>` (a scope note, a note,
+a class file or a folder) to say where a class name is read from; without it a
+name means the root's class. The flag lives in the `fileclass-cli` repository and
+needs plugin API 1.2.
 
 Add `--json` to any command for machine-readable output. `validate` exits
 non-zero when it finds a violation, so it drops straight into a CI or pre-commit

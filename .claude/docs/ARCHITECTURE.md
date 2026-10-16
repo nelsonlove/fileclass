@@ -470,11 +470,12 @@ canvas file tracking (comes with the planned Canvas engine, §9.1).
 
 Decided on the vault owner's ruling of 2026-10-15 (cascading resolution). A scope (a folder with a scope note: a folder note whose class is `scopeClass` or extends it) may keep classes in its own classes folder; a class name means the nearest class that gives it, up the scope chain, `classFilesPath` last.
 
-- **Identity is the class file path**, not the name. The index keys `byPath`, ancestors and resolved fields by path; a scope's lookup is a list of layers (name → path), nearest first, the root's last. The bare-name accessors (`getFileClass`, `getResolvedFields`, `getAncestors`, `fileClassNames`, `getFileClassFile`) mean the **root's** class; a context parameter is the next PR.
+- **Identity is the class file path**, not the name. The index keys `byPath`, ancestors and resolved fields by path; a scope's lookup is a list of layers (name → path), nearest first, the root's last. The accessors (`getFileClass`, `getFileClassFile`, `getResolvedFields`, `getAncestors`, `resolveIcon`) take an optional **context** — a note, or a note's, scope note's, class file's or folder's path — and a name means the nearest class that gives it up that context's chain; **no context means the root's class**, so a bare-name caller reads what it always read. A class file is its own context, so a class's panels read its own definition. `fileClassNames` is the root's; `fileClassNamesFor(ctx)` and `allClasses()` reach the scoped ones. A field records its declaring file (`fileClassPath`), since a name is not unique. Notes "of a class" are those for which `bindsClass(note, name, ctx)` holds: the note's own scope must mean the same file, so a shadow's notes are not the root class's.
 - **`registry(file)` is chain-bound**, so `resolver.ts` is unchanged: `has`/`fieldsOf` look the name up in the file's scope, and the tag/path/bookmark maps hold only the classes visible there (farthest first, so a nearer class wins inside its scope and reaches nothing outside).
 - **`extends` resolves from the class's own scope upward, skipping the class itself**, so a shadow may extend what it shadows. The cycle guard is the existing one, on paths.
 - **Errors, never silence:** a shadow, one name twice in one scope (neither binds, no fall through), a stray note in a scoped folder, and a broken chain (unresolved link, non-scope target, cycle, depth over 16) each go to `errors`.
 - **Off means the old index**: with the setting off the root layer is the only layer and the binding maps are built in the same order as before. Pinned by `scopedIndex.test.ts`, which also checks that turning it on changes no note outside a shadowing scope.
+- **Root-only by design** (PR 2): reverse relations, the schema canvas and the global-class setting. The audit and the rename warning cover every class and name a scoped one `name @ path` (`classRef.ts`), so findings are told apart and the schema log's wrench reopens that file; other log lines carry a bare name. The base generator gives a scoped class no default in the root's bases folder (`basePath.ts`: its scope's `.07 …/bases/generated/`, or nothing) and refuses a scoped class's base inside a classes folder. *Create a class* asks the scope and makes the classes folder when the pattern names one under an existing slot.
 - `scopeChain.ts` is pure behind a `ScopeHost`; `tests/unit/stubs/obsidian.ts` (aliased in `vitest.config.ts`) gives the index tests the four runtime names they need.
 
 ### 10.1 Paths a schema stores, when they move (#159, `renamePaths.ts` / `renameNotice.ts`)
@@ -585,7 +586,7 @@ round-trip verified) and a future standalone `fileclass` CLI/TUI wrapper. Not a
 one-to-one port of Metadata Menu's `plugin.api`.
 
 **API-1 (landed):** `src/api/fileclassApi.ts` → `createFileclassApi(plugin)`,
-exposed as `plugin.api` (`app.plugins.plugins.fileclass.api`, `version` now "1.1").
+exposed as `plugin.api` (`app.plugins.plugins.fileclass.api`, `version` now "1.2": an optional `scope` on the class-name calls, §10.3).
 Thin wiring over the existing engine (index, `validateField`, `io/read`+`write`,
 `resolveFieldValues`, `describeField`, `insertMissingFields`), JSON in/out,
 non-interactive (`setValue` validates then writes — strict list membership, no

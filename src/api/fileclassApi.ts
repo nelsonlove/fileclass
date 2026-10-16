@@ -29,12 +29,22 @@ import { writeFieldValue } from "../io/write";
 import { Field, isRootField } from "../schema/field";
 import { fileClassBaseFile } from "../views/baseSync";
 
-export const API_VERSION = "1.1";
+export const API_VERSION = "1.2";
 
 const LINK_TYPES = new Set<string>(["File", "MultiFile", "Media", "MultiMedia"]);
 
+/**
+ * Where a class name is read from (§10.3): a scope note's path, a note's path (its scope), a class
+ * file's path (its own scope) or a folder's. Omitted, a name means the root's class. Since 1.2.
+ */
+export type ScopeRef = string;
+
 export interface FileClassSummary {
 	name: string;
+	/** The class file. Since 1.2. */
+	path: string;
+	/** The scope note of the class's scope, "" for the root. Since 1.2. */
+	scope: string;
 	extends: string | null;
 	fieldCount: number;
 	icon: string;
@@ -49,6 +59,10 @@ export interface FieldDef {
 }
 export interface SchemaDef {
 	name: string;
+	/** The class file. Since 1.2. */
+	path: string;
+	/** The scope note of the class's scope, "" for the root. Since 1.2. */
+	scope: string;
 	ancestors: string[];
 	options: Record<string, unknown>;
 	fields: FieldDef[];
@@ -71,6 +85,8 @@ export interface ExplainField {
 export interface NoteExplain {
 	path: string;
 	fileClasses: string[];
+	/** The class file each of `fileClasses` means for this note, in the same order. Since 1.2. */
+	classPaths: string[];
 	ancestry: string[][];
 	fields: ExplainField[];
 }
@@ -90,6 +106,8 @@ export interface WriteResult {
 /** Empty scope = the whole vault. */
 export interface ValidateScope {
 	fileClass?: string;
+	/** Where `fileClass` is read from (a `ScopeRef`). Since 1.2. */
+	scope?: ScopeRef;
 	path?: string;
 	folder?: string;
 }
@@ -110,6 +128,8 @@ export interface BulkResult {
 /** Selection for a bulk edit: a fileClass, narrowed by a field condition and/or a base view. */
 export interface BulkScope {
 	fileClass: string;
+	/** Where `fileClass` is read from (a `ScopeRef`). Since 1.2. */
+	scope?: ScopeRef;
 	/** Simple field condition (field/op/value). */
 	where?: Filter;
 	/** Base-view filter: only notes matched by this view are affected (needs Bases). */
@@ -132,6 +152,8 @@ export interface BulkPreview {
 	errors: WriteResult[];
 }
 export interface ListOptions {
+	/** Where the class name is read from (a `ScopeRef`). Since 1.2. */
+	scope?: ScopeRef;
 	columns?: string[];
 	where?: Filter;
 	limit?: number;
@@ -143,8 +165,9 @@ export interface FileclassApi {
 
 	// Inspect
 	vaultInfo(): Promise<{ name: string; path: string }>;
-	listFileClasses(): Promise<FileClassSummary[]>;
-	getSchema(fileClass: string): Promise<SchemaDef | null>;
+	/** The classes a scope sees (its own, then up to the root's); omitted, the root's. */
+	listFileClasses(scope?: ScopeRef): Promise<FileClassSummary[]>;
+	getSchema(fileClass: string, scope?: ScopeRef): Promise<SchemaDef | null>;
 	explain(path: string): Promise<NoteExplain | null>;
 	getFields(path: string): Promise<FieldInfo[]>;
 	getValue(path: string, field: string): Promise<unknown>;
@@ -154,9 +177,9 @@ export interface FileclassApi {
 	listNotes(fileClass: string, opts?: ListOptions): Promise<NoteRow[]>;
 
 	/** The fileClass's base view as rows/columns (null if no base / Bases off). */
-	baseTable(fileClass: string): Promise<BaseTable | null>;
+	baseTable(fileClass: string, scope?: ScopeRef): Promise<BaseTable | null>;
 	/** Opens the fileClass's schema editor in the Obsidian window. */
-	openSchema(fileClass: string): Promise<WriteResult>;
+	openSchema(fileClass: string, scope?: ScopeRef): Promise<WriteResult>;
 
 	// Validate
 	validate(scope?: ValidateScope): Promise<Violation[]>;
@@ -169,7 +192,8 @@ export interface FileclassApi {
 		fileClass: string,
 		field: string,
 		value: unknown,
-		where?: Filter
+		where?: Filter,
+		scope?: ScopeRef
 	): Promise<BulkResult>;
 	/** Dry-run of a bulk edit over a scope (fileClass + optional condition/base view). */
 	previewValueWhere(scope: BulkScope, field: string, value: unknown): Promise<BulkPreview>;
@@ -200,11 +224,25 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 		return f ? readFieldValue(app, file, f) : undefined;
 	};
 
-	/** Notes bound to `fileClass`, optionally narrowed by a filter. */
-	const selectNotes = (fileClass: string, where?: Filter): TFile[] => {
+	/**
+	 * A scope reference, checked: one that names nothing in the vault is an error, never the root
+	 * by accident — a typo would otherwise read another class of the same name.
+	 */
+	const scopeRef = (scope: ScopeRef | undefined): ScopeRef | undefined => {
+		if (scope === undefined || scope === null) return undefined;
+		if (typeof scope !== "string") throw new Error("Fileclass API: a scope is a vault path.");
+		if (!index.knowsContext(scope)) throw new Error(`Fileclass API: no scope, note or folder at "${scope}".`);
+		return scope;
+	};
+
+	/**
+	 * Notes bound to `fileClass` as read from `scope`, optionally narrowed by a filter. A note in a
+	 * scope that shadows the name carries the shadow, so it is not one of this class's notes.
+	 */
+	const selectNotes = (fileClass: string, where?: Filter, scope?: ScopeRef): TFile[] => {
 		const bound = app.vault
 			.getMarkdownFiles()
-			.filter((f) => index.getFileClasses(f).includes(fileClass));
+			.filter((f) => index.bindsClass(f, fileClass, scope));
 		return where ? bound.filter((f) => matchesFilter(readByName(f, where.field), where)) : bound;
 	};
 
@@ -236,7 +274,7 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 	/** Notes selected by a scope: bound to the fileClass, narrowed by the field
 	 * condition and/or the base view (intersection). */
 	const selectNotesScoped = async (scope: BulkScope): Promise<TFile[]> => {
-		let notes = selectNotes(scope.fileClass, scope.where);
+		let notes = selectNotes(scope.fileClass, scope.where, scopeRef(scope.scope));
 		if (scope.baseFile) {
 			const files = await getBaseFiles(app, scope.baseFile, scope.viewName, null);
 			const inBase = new Set(files.map((f) => f.path));
@@ -256,12 +294,22 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			  }
 			: null;
 
+	/** Guard: a scope that names nothing is refused as a result, never thrown (mutations). */
+	const scopeGuard = (scope: BulkScope, field: string): WriteResult | null => {
+		try {
+			scopeRef(scope.scope);
+			return null;
+		} catch (e) {
+			return { ok: false, path: String(scope.scope), field, message: (e as Error).message };
+		}
+	};
+
 	const runPreview = async (
 		scope: BulkScope,
 		field: string,
 		value: unknown
 	): Promise<BulkPreview> => {
-		const guard = basesGuard(scope, field);
+		const guard = scopeGuard(scope, field) ?? basesGuard(scope, field);
 		if (guard) return { total: 0, changes: [], willSkip: 0, errors: [guard] };
 		const notes = await selectNotesScoped(scope);
 		let willSkip = 0;
@@ -313,7 +361,7 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 	};
 
 	const runApply = async (scope: BulkScope, field: string, value: unknown): Promise<BulkResult> => {
-		const guard = basesGuard(scope, field);
+		const guard = scopeGuard(scope, field) ?? basesGuard(scope, field);
 		if (guard) return { ok: false, changed: 0, skipped: 0, errors: [guard] };
 		let changed = 0;
 		let skipped = 0;
@@ -372,27 +420,38 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			return { name: app.vault.getName(), path: adapter.getBasePath?.() ?? adapter.basePath ?? "" };
 		},
 
-		async listFileClasses() {
-			return index.fileClassNames.map((name) => {
-				const fc = index.getFileClass(name);
-				return {
-					name,
-					extends: fc?.options.extends ?? null,
-					fieldCount: index.getResolvedFields(name).filter(isRootField).length,
-					icon: index.resolveIcon(name),
-					hasBase: !!fileClassBaseFile(plugin, name),
-				};
+		async listFileClasses(scope) {
+			const ctx = scopeRef(scope);
+			return index.fileClassNamesFor(ctx).flatMap((name) => {
+				const path = index.resolveClass(name, ctx);
+				if (!path) return [];
+				const fc = index.getFileClassByPath(path);
+				return [
+					{
+						name,
+						path,
+						scope: index.scopeOfClassFile(path) ?? "",
+						extends: fc?.options.extends ?? null,
+						fieldCount: index.getResolvedFields(name, path).filter(isRootField).length,
+						icon: index.resolveIcon(name, path),
+						hasBase: !!fileClassBaseFile(plugin, name, path),
+					},
+				];
 			});
 		},
 
-		async getSchema(fileClass) {
-			const fc = index.getFileClass(fileClass);
-			if (!fc) return null;
+		async getSchema(fileClass, scope) {
+			const ctx = scopeRef(scope);
+			const path = index.resolveClass(fileClass, ctx);
+			const fc = path ? index.getFileClassByPath(path) : undefined;
+			if (!path || !fc) return null;
 			return {
 				name: fileClass,
-				ancestors: index.getAncestors(fileClass),
+				path,
+				scope: index.scopeOfClassFile(path) ?? "",
+				ancestors: index.getAncestors(fileClass, path),
 				options: { ...fc.options },
-				fields: index.getResolvedFields(fileClass).map(toFieldDef),
+				fields: index.getResolvedFields(fileClass, path).map(toFieldDef),
 			};
 		},
 
@@ -406,7 +465,8 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			return {
 				path: file.path,
 				fileClasses,
-				ancestry: fileClasses.map((n) => [n, ...index.getAncestors(n)]),
+				classPaths: fileClasses.map((n) => index.resolveClass(n, file) ?? ""),
+				ancestry: fileClasses.map((n) => [n, ...index.getAncestors(n, file)]),
 				fields: roots.map((f) => {
 					const value = readFieldValue(app, file, f);
 					return {
@@ -462,13 +522,14 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 		},
 
 		async listNotes(fileClass, opts = {}) {
+			const ctx = scopeRef(opts.scope);
 			const columns =
 				opts.columns ??
 				index
-					.getResolvedFields(fileClass)
+					.getResolvedFields(fileClass, ctx)
 					.filter(isRootField)
 					.map((f) => f.name);
-			let notes = selectNotes(fileClass, opts.where);
+			let notes = selectNotes(fileClass, opts.where, ctx);
 			if (opts.limit != null) notes = notes.slice(0, opts.limit);
 			return notes.map((file) => ({
 				path: file.path,
@@ -476,8 +537,8 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			}));
 		},
 
-		async baseTable(fileClass) {
-			const fc = index.getFileClass(fileClass);
+		async baseTable(fileClass, scope) {
+			const fc = index.getFileClass(fileClass, scopeRef(scope));
 			const baseFile = fc?.options.baseFile?.trim();
 			if (!baseFile || !plugin.basesAvailable) return null;
 			const view = fc?.options.baseView?.trim() || fileClass;
@@ -488,19 +549,26 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			};
 		},
 
-		async openSchema(fileClass) {
-			if (!index.getFileClass(fileClass)) {
+		async openSchema(fileClass, scope) {
+			// A write-shaped result: a scope that names nothing is returned, never thrown.
+			let ctx: ScopeRef | undefined;
+			try {
+				ctx = scopeRef(scope);
+			} catch (e) {
+				return { ok: false, path: fileClass, message: (e as Error).message };
+			}
+			if (!index.getFileClass(fileClass, ctx)) {
 				return { ok: false, path: fileClass, message: `No fileClass "${fileClass}".` };
 			}
-			openFileClassSchema(plugin, fileClass);
+			openFileClassSchema(plugin, fileClass, undefined, ctx);
 			return { ok: true, path: fileClass };
 		},
 
 		async validate(scope = {}) {
 			const violations: Violation[] = [];
+			const ctx = scopeRef(scope.scope);
 			for (const file of filesForScope(scope)) {
-				const names = index.getFileClasses(file);
-				if (scope.fileClass && !names.includes(scope.fileClass)) continue;
+				if (scope.fileClass && !index.bindsClass(file, scope.fileClass, ctx)) continue;
 				for (const f of index.getFields(file).filter(isRootField)) {
 					const value = readFieldValue(app, file, f);
 					const result = validateField(f, value, await allowedFor(file, f));
@@ -557,8 +625,8 @@ export function createFileclassApi(plugin: FileclassPlugin): FileclassApi {
 			}
 		},
 
-		setValueWhere: (fileClass, field, value, where) =>
-			runApply({ fileClass, where }, field, value),
+		setValueWhere: (fileClass, field, value, where, scope) =>
+			runApply({ fileClass, where, scope }, field, value),
 		previewValueWhere: (scope, field, value) => runPreview(scope, field, value),
 		applyValueWhere: (scope, field, value) => runApply(scope, field, value),
 		applyValueToPaths: (paths, field, value) => runApplyPaths(paths, field, value),

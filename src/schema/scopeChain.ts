@@ -288,14 +288,23 @@ export function classesFoldersOf(
 		.map(normaliseFolder);
 	if (explicit.length) return [...new Set(explicit.filter((f) => host.isFolder(f)))];
 
+	const base = patternBase(scopeNote, host);
+	if (base === undefined || !segments.length) return [];
+	return matchPattern(base, segments, host);
+}
+
+/**
+ * The folder the classes pattern runs below for a scope note: its own folder, or for an area its
+ * management category (the child whose name starts with the area's first digit then 0).
+ * Undefined for a root note at the top of the vault, or an area with no management category.
+ */
+function patternBase(scopeNote: string, host: ScopeHost): string | undefined {
 	const folder = parentFolder(scopeNote);
-	if (!folder || !segments.length) return [];
+	if (!folder) return undefined;
 	const digit = areaDigit(baseName(folder));
-	if (digit !== undefined) {
-		const management = [...host.childFolders(folder)].sort().find((name) => name.startsWith(`${digit}0 `));
-		return management ? matchPattern(`${folder}/${management}`, segments, host) : [];
-	}
-	return matchPattern(folder, segments, host);
+	if (digit === undefined) return folder;
+	const management = [...host.childFolders(folder)].sort().find((name) => name.startsWith(`${digit}0 `));
+	return management ? `${folder}/${management}` : undefined;
 }
 
 /**
@@ -310,4 +319,30 @@ export function matchesPatternPath(folder: string, segments: RegExp[]): boolean 
 		if (segments.every((re, k) => re.test(parts[i + k]))) return true;
 	}
 	return false;
+}
+
+/**
+ * Where a new class of a scope goes: its first classes folder when it has one; else the folder the
+ * pattern would name, made from the folders that exist and a last segment that is a plain name (the
+ * default pattern's `classes`). Undefined when neither can be said — a scope with no `.03` slot, or
+ * a pattern whose last segment is an expression.
+ */
+export function classesFolderToCreate(
+	scopeNote: string,
+	host: ScopeHost,
+	settings: ScopeSettings,
+	segments: RegExp[]
+): string | undefined {
+	const existing = classesFoldersOf(scopeNote, host, settings, segments);
+	if (existing.length) return existing[0];
+	const declared = host.frontmatterOf(scopeNote)?.[settings.classesKey];
+	if (declared != null && declared !== "") return undefined; // the key names folders; none exists
+	if (segments.length < 1) return undefined;
+	const last = segments[segments.length - 1].source.replace(/^\^\(\?:/, "").replace(/\)\$$/, "");
+	if (!/^[\w .-]+$/.test(last)) return undefined;
+	const base = patternBase(scopeNote, host);
+	if (base === undefined) return undefined;
+	const head = segments.slice(0, -1);
+	const parents = head.length ? matchPattern(base, head, host) : [base];
+	return parents.length ? `${parents[0]}/${last}` : undefined;
 }

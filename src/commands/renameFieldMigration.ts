@@ -38,7 +38,8 @@ export function notesCarrying(plugin: FileclassPlugin, field: Field, from: strin
 	const out: RenameCandidate[] = [];
 	for (const file of plugin.app.vault.getMarkdownFiles()) {
 		const fields = plugin.index.getFields(file);
-		if (!fields.some((f) => f.id === field.id)) continue;
+		// The same id in the same class file: a scope's class that copies a root class keeps its ids.
+		if (!fields.some((f) => f.id === field.id && f.fileClassPath === field.fileClassPath)) continue;
 		const frontmatter = plugin.app.metadataCache.getFileCache(file)?.frontmatter;
 		if (!frontmatter) continue;
 		// A dry run of the very write that would be applied: whatever it would rename is
@@ -121,18 +122,21 @@ async function followRenameInFieldOrders(
 	field: Field,
 	from: string
 ): Promise<void> {
-	const owner = field.fileClassName;
-	const holders = plugin.index.fileClassNames.filter(
-		(name) => name === owner || plugin.index.getAncestors(name).includes(owner)
-	);
-	for (const name of holders) {
-		const order = plugin.index.getFileClass(name)?.options.fieldsOrder ?? [];
+	const index = plugin.index;
+	// By file, not by name: once scopes hold classes, a name may mean several (§10.3).
+	const ownerPath = field.fileClassPath ?? index.resolveClass(field.fileClassName);
+	if (!ownerPath) return;
+	const holders = index
+		.allClasses()
+		.filter((c) => c.path === ownerPath || index.ancestorPathsOf(c.path).includes(ownerPath));
+	for (const { path } of holders) {
+		const order = index.getFileClassByPath(path)?.options.fieldsOrder ?? [];
 		if (!order.length) continue;
-		const fields = plugin.index.getResolvedFields(name);
+		const fields = index.resolvedFieldsOf(path);
 		const trail = ancestorNames(fields, field);
 		const next = renamedFieldOrder(order, [...trail, from].join("."), [...trail, field.name].join("."));
 		if (!next) continue;
-		const file = plugin.index.getFileClassFile(name);
+		const file = plugin.app.vault.getFileByPath(path);
 		if (file) await writeOptions(plugin.app, file, { fieldsOrder: next });
 	}
 }

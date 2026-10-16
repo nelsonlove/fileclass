@@ -60,6 +60,11 @@ export interface Field {
 	path: string;
 	/** Name of the fileClass declaring this field. */
 	fileClassName: string;
+	/**
+	 * The class file declaring this field, set by the index. A name alone is not unique once
+	 * scopes hold classes (§10.3); the path is.
+	 */
+	fileClassPath?: string;
 }
 
 /** Shape of a raw `fields[]` entry before validation. */

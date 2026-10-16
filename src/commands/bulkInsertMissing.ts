@@ -14,6 +14,7 @@ import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import { logEvent } from "../log/schemaLog";
 
 import type FileclassPlugin from "../../main";
+import type { ClassContext } from "../schema/fileclassIndex";
 import { missingRootFields } from "../fields/missingFields";
 import { hasFieldKey } from "../io/read";
 import { insertMissingFields } from "./insertMissingFields";
@@ -34,11 +35,14 @@ export interface InsertCandidate {
  */
 export function notesMissingFields(
 	plugin: FileclassPlugin,
-	fileClassName: string
+	fileClassName: string,
+	/** Where the name is read from (§10.3); none means the root's class. */
+	ctx?: ClassContext
 ): InsertCandidate[] {
 	const out: InsertCandidate[] = [];
 	for (const file of plugin.app.vault.getMarkdownFiles()) {
-		if (!plugin.index.getFileClasses(file).includes(fileClassName)) continue;
+		// A note in a scope that shadows the name carries the shadow, not this class.
+		if (!plugin.index.bindsClass(file, fileClassName, ctx)) continue;
 		const fields = plugin.index.getFields(file);
 		const missing = missingRootFields(fields, (f) => hasFieldKey(plugin.app, file, f));
 		if (missing.length) out.push({ file, missing: missing.map((f) => f.name) });
@@ -49,9 +53,10 @@ export function notesMissingFields(
 /** Asks, lists, and inserts. A class whose notes are all complete says so and stops. */
 export async function bulkInsertMissingFields(
 	plugin: FileclassPlugin,
-	fileClassName: string
+	fileClassName: string,
+	ctx?: ClassContext
 ): Promise<void> {
-	const candidates = notesMissingFields(plugin, fileClassName);
+	const candidates = notesMissingFields(plugin, fileClassName, ctx);
 	if (!candidates.length) {
 		new Notice(`Fileclass: every note of "${fileClassName}" already has its fields.`);
 		return;

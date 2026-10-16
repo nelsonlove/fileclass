@@ -19,6 +19,7 @@
 import { Modal, Notice, Setting, TFile, normalizePath } from "obsidian";
 
 import type FileclassPlugin from "../../main";
+import type { ClassContext } from "../schema/fileclassIndex";
 import { applyTemplate } from "../engine/templateAdapter";
 import { logEvent } from "../log/schemaLog";
 import { ChoiceSuggestModal } from "../fields/input/valueModals";
@@ -46,6 +47,8 @@ export interface CreateNoteRequest {
 	 * table makes a note that is a Todo, or it would vanish from the table that created it.
 	 */
 	seeds?: Seed[];
+	/** Where `fileClass` is read from (§10.3): a class file, a note, a scope. None means the root. */
+	scope?: ClassContext;
 }
 
 /** Obsidian's own "default location for new notes", as a folder path. */
@@ -153,7 +156,8 @@ export async function createNoteWithClass(
 	req: CreateNoteRequest
 ): Promise<TFile | null> {
 	const app = plugin.app;
-	const parsed = plugin.index.getFileClass(req.fileClass);
+	const parsed = plugin.index.getFileClass(req.fileClass, req.scope);
+	const classPath = plugin.index.resolveClass(req.fileClass, req.scope);
 	if (!parsed) {
 		new Notice(`Fileclass: "${req.fileClass}" is not a fileClass in this vault.`);
 		return null;
@@ -214,7 +218,15 @@ export async function createNoteWithClass(
 	// carries, which it answers from the metadata cache — empty for a note created a moment ago, so
 	// nothing was inserted at all (measured: a note arrived with its template's frontmatter and none
 	// of its schema). We know the class: it is what was asked for.
-	const fields = plugin.index.getResolvedFields(req.fileClass);
+	const fields = plugin.index.getResolvedFields(req.fileClass, req.scope);
+	// A scope's class binds only notes inside its scope (§10.3). Said, not prevented: the folder is
+	// the class's own setting, or the reader's default, and either may be on purpose.
+	if (classPath && plugin.index.resolveClass(req.fileClass, target) !== classPath) {
+		new Notice(
+			`Fileclass: at ${target.path}, "${req.fileClass}" means another class or none, not ${classPath} — the note sits outside that class's scope, or in a scope with its own "${req.fileClass}".`,
+			10000
+		);
+	}
 	await app.fileManager.processFrontMatter(target, (fm: Record<string, unknown>) => {
 		const has = (name: string): boolean => Object.prototype.hasOwnProperty.call(fm, name);
 		const alias = plugin.settings.fileClassAlias;

@@ -19,7 +19,7 @@ import { insertMissingFields } from "./src/commands/insertMissingFields";
 import { manageFieldAtCursor } from "./src/commands/manageFieldAtCursor";
 import { syncSchemaCanvas } from "./src/views/schemaCanvasSync";
 import { bulkInsertMissingFields } from "./src/commands/bulkInsertMissing";
-import { ChoiceSuggestModal } from "./src/fields/input/valueModals";
+import { pickClass } from "./src/ui/classPicker";
 import { reorderFrontmatter } from "./src/io/reorderFrontmatter";
 import { pickAndUpdateField } from "./src/fields/fieldActions";
 import { FileclassIndex } from "./src/schema/fileclassIndex";
@@ -273,22 +273,17 @@ export default class FileclassPlugin extends Plugin {
 			id: "insert-missing-fields-across-a-class",
 			name: "Insert missing fields across a class",
 			checkCallback: (checking) => {
-				const names = this.index.fileClassNames;
-				if (!names.length) return false;
+				if (!this.index.allClasses().length) return false;
 				if (!checking) {
 					// The class of the note in front of you, when there is one — the same courtesy
-					// the bulk edit command does; otherwise, ask.
+					// the bulk edit command does; otherwise, ask, among every class (§10.3).
 					const active = this.app.workspace.getActiveFile();
 					const current = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-					if (current) void bulkInsertMissingFields(this, current);
+					if (active && current) void bulkInsertMissingFields(this, current, active.path);
 					else
-						new ChoiceSuggestModal(
-							this.app,
-							[...names].sort((a, b) => a.localeCompare(b)),
-							(n) => n,
-							(n) => void bulkInsertMissingFields(this, n),
-							"Insert missing fields across which class?"
-						).open();
+						pickClass(this, "Insert missing fields across which class?", (c) =>
+							void bulkInsertMissingFields(this, c.name, c.path)
+						);
 				}
 				return true;
 			},
@@ -299,21 +294,17 @@ export default class FileclassPlugin extends Plugin {
 			id: "create-note",
 			name: "Create a note with a class",
 			checkCallback: (checking) => {
-				if (!this.index.fileClassNames.length) return false;
+				if (!this.index.allClasses().length) return false;
 				if (!checking) {
 					const active = this.app.workspace.getActiveFile();
 					const current = active ? this.index.fileClassNameOfNote(active.path) : undefined;
 					// The class of the note in front of you when it is a class note — you are looking at
-					// its schema, so it is the one you mean; otherwise ask.
-					if (current) void createNoteWithClass(this, { fileClass: current });
+					// its schema, so it is the one you mean; otherwise ask, among every class (§10.3).
+					if (active && current) void createNoteWithClass(this, { fileClass: current, scope: active.path });
 					else
-						new ChoiceSuggestModal(
-							this.app,
-							[...this.index.fileClassNames].sort((a, b) => a.localeCompare(b)),
-							(n) => n,
-							(n) => void createNoteWithClass(this, { fileClass: n }),
-							"Create a note with which class?"
-						).open();
+						pickClass(this, "Create a note with which class?", (c) =>
+							void createNoteWithClass(this, { fileClass: c.name, scope: c.path })
+						);
 				}
 				return true;
 			},
@@ -329,11 +320,11 @@ export default class FileclassPlugin extends Plugin {
 			id: "bulk-edit-field",
 			name: "Bulk edit a field",
 			checkCallback: (checking) => {
-				if (!this.index.fileClassNames.length) return false;
+				if (!this.index.allClasses().length) return false;
 				if (!checking) {
 					const active = this.app.workspace.getActiveFile();
 					const fc = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-					openBulkEdit(this, fc ?? undefined);
+					openBulkEdit(this, fc ?? undefined, active?.path);
 				}
 				return true;
 			},
@@ -343,11 +334,11 @@ export default class FileclassPlugin extends Plugin {
 			id: "edit-class-schema",
 			name: "Edit a class schema",
 			checkCallback: (checking) => {
-				if (!this.index.fileClassNames.length) return false;
+				if (!this.index.allClasses().length) return false;
 				if (!checking) {
 					const active = this.app.workspace.getActiveFile();
 					const name = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-					openFileClassSchema(this, name);
+					openFileClassSchema(this, name, undefined, active?.path);
 				}
 				return true;
 			},
@@ -357,11 +348,11 @@ export default class FileclassPlugin extends Plugin {
 			id: "create-base",
 			name: "Create a base for a class",
 			checkCallback: (checking) => {
-				if (!this.index.fileClassNames.length) return false;
+				if (!this.index.allClasses().length) return false;
 				if (!checking) {
 					const active = this.app.workspace.getActiveFile();
 					const name = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-					pickAndCreateBase(this, name);
+					pickAndCreateBase(this, name, active?.path);
 				}
 				return true;
 			},
@@ -373,8 +364,8 @@ export default class FileclassPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const active = this.app.workspace.getActiveFile();
 				const name = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-				if (!name || !this.index.getFileClass(name)?.options.baseFile) return false;
-				if (!checking) void syncFileClassToBase(this, name);
+				if (!active || !name || !this.index.getFileClass(name, active.path)?.options.baseFile) return false;
+				if (!checking) void syncFileClassToBase(this, name, active.path);
 				return true;
 			},
 		});
@@ -385,8 +376,8 @@ export default class FileclassPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const active = this.app.workspace.getActiveFile();
 				const name = active ? this.index.fileClassNameOfNote(active.path) : undefined;
-				if (!name || !fileClassBaseFile(this, name)) return false;
-				if (!checking) void openFileClassBase(this, name);
+				if (!active || !name || !fileClassBaseFile(this, name, active.path)) return false;
+				if (!checking) void openFileClassBase(this, name, active.path);
 				return true;
 			},
 		});
