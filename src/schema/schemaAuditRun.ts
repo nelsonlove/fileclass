@@ -97,18 +97,18 @@ function world(plugin: FileclassPlugin, classPath: string, name: string, scope: 
 }
 
 /**
- * One finding per name a scope gives twice (01.12 rule 1k): neither file binds in that scope, and
- * the name does not fall through to a class further up. Named for the scope note, which is where
- * the scope's classes folders are declared, so the fingerprint holds while the clash does, even as
- * files join or leave it; the files are named in the consequence, which the fingerprint ignores.
+ * One finding per clash (01.12 rule 1k): a scope's folders give one name more than once, no file of
+ * them binds there, and the name does not fall through to a class further up. Named with its first
+ * file, so the log line's wrench opens a class; its value lists every file, so a change in which
+ * files clash logs the old clash resolved and the new one as fresh.
  */
 function duplicateFindings(plugin: FileclassPlugin): Finding[] {
 	return plugin.index.duplicateClasses().map(({ scope, name, paths }) => ({
-		fileClass: classRef(name, scope, scope),
+		fileClass: classRef(name, paths[0], scope),
 		kind: "duplicate-class" as const,
 		level: "ERROR" as const,
-		value: name,
-		consequence: `given by ${paths.join(", ")}; neither binds in this scope, and the name does not fall through to a class further up`,
+		value: paths.join(", "),
+		consequence: `no file of these binds for the notes of ${scope}, and the name does not fall through to a class further up`,
 	}));
 }
 
