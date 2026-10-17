@@ -311,6 +311,8 @@ export class FileclassIndex extends Events {
 			classesInFolder.get(folder)?.set(name, file.path);
 		}
 
+		this.findDuplicates(ownFolders, classesInFolder);
+
 		// Chains and layers.
 		const chainLengthOf = new Map<string, number>();
 		for (const note of scopeNotes) {
@@ -331,7 +333,6 @@ export class FileclassIndex extends Events {
 						if (known === undefined) layer.set(name, path);
 						else if (known !== path) {
 							layer.set(name, null);
-							this.noteDuplicate(scope, name, known, path);
 							errors.add(`Scope ${scope} gives the class ${name} twice (${known ?? "an earlier file"} and ${path}); neither binds.`);
 						}
 					}
@@ -371,17 +372,38 @@ export class FileclassIndex extends Events {
 		this.errors.push(...errors);
 	}
 
-	private noteDuplicate(scope: string, name: string, known: string | null, path: string): void {
-		const key = `${scope}\u0000${name}`;
-		let dup = this.duplicates.get(key);
-		if (!dup) {
-			dup = { scope, name, paths: [] };
-			this.duplicates.set(key, dup);
+	/**
+	 * Records every name a scope's own folders give twice (01.12 rule 1k), once per distinct set of
+	 * folders: an area and its management category share their folders, and the clash is one
+	 * problem, named for the deeper scope note (the one the index files the classes under).
+	 */
+	private findDuplicates(
+		ownFolders: Map<string, string[]>,
+		classesInFolder: Map<string, Map<string, string>>
+	): void {
+		const depth = (note: string) => note.split("/").length;
+		for (const [scope, folders] of ownFolders) {
+			if (folders.length < 2) continue;
+			const pathsByName = new Map<string, Set<string>>();
+			for (const folder of folders) {
+				for (const [name, path] of classesInFolder.get(folder) ?? []) {
+					const paths = pathsByName.get(name) ?? new Set<string>();
+					paths.add(path);
+					pathsByName.set(name, paths);
+				}
+			}
+			const folderKey = [...folders].sort().join("\u0000");
+			for (const [name, paths] of pathsByName) {
+				if (paths.size < 2) continue;
+				const key = `${folderKey}\u0001${name}`;
+				const known = this.duplicates.get(key);
+				const better =
+					!known ||
+					depth(scope) > depth(known.scope) ||
+					(depth(scope) === depth(known.scope) && scope.localeCompare(known.scope) < 0);
+				if (better) this.duplicates.set(key, { scope, name, paths: [...paths] });
+			}
 		}
-		for (const p of [known, path]) {
-			if (p && !dup.paths.includes(p)) dup.paths.push(p);
-		}
-		dup.paths.sort((a, b) => a.localeCompare(b));
 	}
 
 	/**
@@ -390,7 +412,7 @@ export class FileclassIndex extends Events {
 	 */
 	duplicateClasses(): DuplicateClass[] {
 		return [...this.duplicates.values()]
-			.map((d) => ({ ...d, paths: [...d.paths] }))
+			.map((d) => ({ ...d, paths: [...d.paths].sort((a, b) => a.localeCompare(b)) }))
 			.sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name));
 	}
 

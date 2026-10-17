@@ -68,19 +68,31 @@ describe("the audit over scoped classes", () => {
 describe("two files, one name, one scope (01.12 rule 1k)", () => {
 	const DUP_A = "50 Dup/a/X.md";
 	const DUP_B = "50 Dup/b/X.md";
+	const SCOPE = "50 Dup/50 Dup.md";
 
 	it("the index lists the clash once, with its scope and both files", () => {
 		const { index } = indexOver(fixture(), { enableScopedClasses: true });
-		expect(index.duplicateClasses()).toEqual([{ scope: "50 Dup/50 Dup.md", name: "X", paths: [DUP_A, DUP_B] }]);
+		expect(index.duplicateClasses()).toEqual([{ scope: SCOPE, name: "X", paths: [DUP_A, DUP_B] }]);
 	});
 
-	it("is one ERROR finding, named with its first file, its value both files", () => {
+	it("is one ERROR finding, named for the scope note, every file in its consequence", () => {
 		const found = audit(fixture()).filter((f) => f.kind === "duplicate-class");
 		expect(found).toHaveLength(1);
 		expect(found[0].level).toBe("ERROR");
-		expect(found[0].fileClass).toBe(`X @ ${DUP_A}`);
-		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B}`);
-		expect(found[0].consequence).toMatch(/neither file binds/);
+		expect(found[0].fileClass).toBe(`X @ ${SCOPE}`);
+		expect(found[0].value).toBe("X");
+		expect(found[0].consequence).toContain(`${DUP_A}, ${DUP_B}`);
+		expect(found[0].consequence).toMatch(/neither binds/);
+	});
+
+	it("keeps its fingerprint while the clash holds, as files join or leave it", () => {
+		const files = fixture();
+		const before = audit(files).filter((f) => f.kind === "duplicate-class").map(fingerprint);
+		files["50 Dup/c/X.md"] = { type: "Meta/Fileclass" };
+		files[SCOPE] = { ...files[SCOPE], classes: ["50 Dup/a", "50 Dup/b", "50 Dup/c"] };
+		const three = audit(files).filter((f) => f.kind === "duplicate-class");
+		expect(three[0].consequence).toContain("50 Dup/c/X.md");
+		expect(three.map(fingerprint)).toEqual(before);
 	});
 
 	it("a child scope that inherits the clash does not report it again", () => {
@@ -92,12 +104,21 @@ describe("two files, one name, one scope (01.12 rule 1k)", () => {
 		expect(audit(files).filter((f) => f.kind === "duplicate-class")).toHaveLength(1);
 	});
 
-	it("a root class of the same name does not bind in the clashing scope (pick A)", () => {
+	it("two scope notes that share the clashing folders report it once, for the deeper note", () => {
+		const files = fixture();
+		files["50 Dup/55 Sub/55 Sub.md"] = { type: "Meta/Scope/Category", up: "[[50 Dup]]", classes: ["50 Dup/b", "50 Dup/a"] };
+		const { index } = indexOver(files, { enableScopedClasses: true });
+		expect(index.duplicateClasses()).toEqual([{ scope: "50 Dup/55 Sub/55 Sub.md", name: "X", paths: [DUP_A, DUP_B] }]);
+		expect(audit(files).filter((f) => f.kind === "duplicate-class")).toHaveLength(1);
+	});
+
+	it("a root class of the same name binds outside the clashing scope, never inside it (pick A)", () => {
 		const files = fixture();
 		files["Classes/X.md"] = { type: "Meta/Fileclass" };
+		files["Notes/x.md"] = { type: "X" };
 		const { index, file } = indexOver(files, { enableScopedClasses: true });
 		expect(index.getFileClasses(file("50 Dup/x.md"))).toEqual([]);
-		expect(index.getFileClasses(file("Notes/score.md"))).not.toContain("X");
+		expect(index.getFileClasses(file("Notes/x.md"))).toEqual(["X"]);
 	});
 
 	it("nothing is reported with the setting off", () => {
