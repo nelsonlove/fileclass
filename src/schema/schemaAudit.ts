@@ -17,7 +17,8 @@ export type FindingKind =
 	| "missing-folder"
 	| "missing-parent"
 	| "dead-tag"
-	| "unknown-exclude";
+	| "unknown-exclude"
+	| "duplicate-class";
 
 export interface Finding {
 	fileClass: string;

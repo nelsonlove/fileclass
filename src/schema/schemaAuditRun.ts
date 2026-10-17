@@ -96,8 +96,28 @@ function world(plugin: FileclassPlugin, classPath: string, name: string, scope: 
 	};
 }
 
+/**
+ * One finding per name a scope gives twice (01.12 rule 1k): neither file binds there, and the name
+ * does not fall through to a class further up, so the scope's notes of that type read as plain
+ * notes. Named with its first file, so the log line's wrench opens one of the two; the value names
+ * them all, so the fingerprint changes if the set of files does.
+ */
+function duplicateFindings(plugin: FileclassPlugin): Finding[] {
+	return plugin.index.duplicateClasses().map(({ scope, name, paths }) => ({
+		fileClass: classRef(name, paths[0], scope),
+		kind: "duplicate-class" as const,
+		level: "ERROR" as const,
+		value: paths.join(", "),
+		consequence: "neither file binds, so the scope's notes of this type read as plain notes",
+	}));
+}
+
 /** Every problem the vault's schemas have right now. */
 export function auditSchemas(plugin: FileclassPlugin): Finding[] {
+	return [...classFindings(plugin), ...duplicateFindings(plugin)];
+}
+
+function classFindings(plugin: FileclassPlugin): Finding[] {
 	return auditedClasses(plugin).flatMap(({ cls, path, scope }) => {
 		const findings = auditClass(cls, world(plugin, path, cls.name, scope));
 		// A scoped class is named with its file, so two classes of one name are two problems in the

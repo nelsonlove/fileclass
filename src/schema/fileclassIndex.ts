@@ -73,6 +73,15 @@ export interface ClassEntry {
 	scope: string;
 }
 
+/** One name that one scope's classes folders give more than once: it binds nothing there. */
+export interface DuplicateClass {
+	/** The scope note whose folders give the name twice. */
+	scope: string;
+	name: string;
+	/** Every file that gives the name, sorted. */
+	paths: string[];
+}
+
 /** The binding maps the pure resolver reads, for one scope. */
 interface Bindings {
 	tagBindings: Map<string, string>;
@@ -113,6 +122,11 @@ export class FileclassIndex extends Events {
 	 * a bookmark group claimed nothing at all (#121's take found it).
 	 */
 	private bookmarkGroupsByPath = new Map<string, string[]>();
+	/**
+	 * Scope key + name → the files one scope gives a name twice or more (01.12 rule 1k). Kept apart
+	 * from `errors` so the audit can log it as a finding, once per scope, not once per chain.
+	 */
+	private duplicates = new Map<string, DuplicateClass>();
 	/** Aggregated non-fatal parse problems from the last rebuild. */
 	errors: string[] = [];
 
@@ -176,6 +190,7 @@ export class FileclassIndex extends Events {
 		this.foldersByScope.clear();
 		this.folderScope.clear();
 		this.bookmarkGroupsByPath.clear();
+		this.duplicates.clear();
 		this.errors = [];
 	}
 
@@ -316,6 +331,7 @@ export class FileclassIndex extends Events {
 						if (known === undefined) layer.set(name, path);
 						else if (known !== path) {
 							layer.set(name, null);
+							this.noteDuplicate(scope, name, known, path);
 							errors.add(`Scope ${scope} gives the class ${name} twice (${known ?? "an earlier file"} and ${path}); neither binds.`);
 						}
 					}
@@ -353,6 +369,29 @@ export class FileclassIndex extends Events {
 			}
 		}
 		this.errors.push(...errors);
+	}
+
+	private noteDuplicate(scope: string, name: string, known: string | null, path: string): void {
+		const key = `${scope}\u0000${name}`;
+		let dup = this.duplicates.get(key);
+		if (!dup) {
+			dup = { scope, name, paths: [] };
+			this.duplicates.set(key, dup);
+		}
+		for (const p of [known, path]) {
+			if (p && !dup.paths.includes(p)) dup.paths.push(p);
+		}
+		dup.paths.sort((a, b) => a.localeCompare(b));
+	}
+
+	/**
+	 * Every name a scope gives twice or more, once per scope, in a stable order (01.12 rule 1k).
+	 * Empty with scoped classes off: the root's classes folder cannot give a name twice.
+	 */
+	duplicateClasses(): DuplicateClass[] {
+		return [...this.duplicates.values()]
+			.map((d) => ({ ...d, paths: [...d.paths] }))
+			.sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name));
 	}
 
 	/** The scoped classes folder a path sits in, if any. */
