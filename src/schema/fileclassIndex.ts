@@ -75,11 +75,20 @@ export interface ClassEntry {
 
 /** One name that one scope's classes folders give more than once: it binds nothing there. */
 export interface DuplicateClass {
-	/** The scope note the index files the clashing classes under. */
-	scope: string;
+	/**
+	 * Every scope note whose own classes folders give the name more than once, sorted: the scopes
+	 * whose notes break (and the scopes below them, which inherit the clash). Not the owner of the
+	 * folders, which may be another scope whose own layer does not clash.
+	 */
+	scopes: string[];
 	name: string;
-	/** Every file that gives the name, sorted. */
+	/** Every file that gives the name, sorted by code unit. */
 	paths: string[];
+}
+
+/** Code-unit order: the same on every machine, so a fingerprint built from it does not move with the locale. */
+function byCodeUnit(x: string, y: string): number {
+	return x < y ? -1 : x > y ? 1 : 0;
 }
 
 /** The binding maps the pure resolver reads, for one scope. */
@@ -127,7 +136,7 @@ export class FileclassIndex extends Events {
 	 * Kept apart from `errors` so the audit can log it as a finding, once per clash however many
 	 * chains or scope notes share the folders.
 	 */
-	private duplicates = new Map<string, { name: string; paths: string[] }>();
+	private duplicates = new Map<string, { name: string; paths: string[]; scopes: Set<string> }>();
 	/** Aggregated non-fatal parse problems from the last rebuild. */
 	errors: string[] = [];
 
@@ -326,23 +335,28 @@ export class FileclassIndex extends Events {
 				folders.forEach((f) => visited.add(f));
 				if (!folders.length) continue;
 				const layer: Layer = new Map();
-				const given = new Map<string, Set<string>>();
+				// Only the names that clash get a set, so a layer without a clash allocates nothing more.
+				const clashing = new Map<string, Set<string>>();
 				for (const folder of folders) {
 					for (const [name, path] of classesInFolder.get(folder) ?? []) {
-						given.set(name, (given.get(name) ?? new Set<string>()).add(path));
 						const known = layer.get(name);
 						if (known === undefined) layer.set(name, path);
+						else if (known === null) clashing.get(name)?.add(path);
 						else if (known !== path) {
 							layer.set(name, null);
-							errors.add(`Scope ${scope} gives the class ${name} twice (${known ?? "an earlier file"} and ${path}); neither binds.`);
+							clashing.set(name, new Set([known, path]));
 						}
 					}
 				}
-				for (const [name, paths] of given) if (paths.size > 1) this.noteDuplicate(name, paths);
+				for (const [name, paths] of clashing) this.noteDuplicate(scope, name, paths);
 				layers.push(layer);
 			}
 			layers.push(this.layersByScope.get(ROOT)?.[0] ?? new Map());
 			this.layersByScope.set(note, layers);
+		}
+		// One line per clash, from the same record the audit logs, so the two never disagree.
+		for (const { scopes, name, paths } of this.duplicateClasses()) {
+			errors.add(`${scopes.join(", ")} ${scopes.length > 1 ? "give" : "gives"} the class ${name} more than once (${paths.join(", ")}); none binds.`);
 		}
 
 		// Index each scoped class once, under the deepest owner whose folder holds the classes
@@ -374,11 +388,16 @@ export class FileclassIndex extends Events {
 		this.errors.push(...errors);
 	}
 
-	/** Records one clash, keyed by its name and its files, so a clash many chains see is one. */
-	private noteDuplicate(name: string, paths: Set<string>): void {
-		const sorted = [...paths].sort((x, y) => x.localeCompare(y));
+	/**
+	 * Records one clash in the layer of `scope`, keyed by its name and its files, so a clash many
+	 * chains or scope notes see is one, naming every scope whose own layer gives it.
+	 */
+	private noteDuplicate(scope: string, name: string, paths: Set<string>): void {
+		const sorted = [...paths].sort(byCodeUnit);
 		const key = `${name}\u0000${sorted.join("\u0000")}`;
-		if (!this.duplicates.has(key)) this.duplicates.set(key, { name, paths: sorted });
+		const known = this.duplicates.get(key);
+		if (known) known.scopes.add(scope);
+		else this.duplicates.set(key, { name, paths: sorted, scopes: new Set([scope]) });
 	}
 
 	/**
@@ -387,8 +406,8 @@ export class FileclassIndex extends Events {
 	 */
 	duplicateClasses(): DuplicateClass[] {
 		return [...this.duplicates.values()]
-			.map(({ name, paths }) => ({ scope: this.scopeOfClass.get(paths[0]) ?? ROOT, name, paths: [...paths] }))
-			.sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name) || a.paths[0].localeCompare(b.paths[0]));
+			.map(({ name, paths, scopes }) => ({ scopes: [...scopes].sort(byCodeUnit), name, paths: [...paths] }))
+			.sort((a, b) => byCodeUnit(a.name, b.name) || byCodeUnit(a.paths.join("\u0000"), b.paths.join("\u0000")));
 	}
 
 	/** The scoped classes folder a path sits in, if any. */

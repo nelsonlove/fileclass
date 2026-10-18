@@ -98,17 +98,19 @@ function world(plugin: FileclassPlugin, classPath: string, name: string, scope: 
 
 /**
  * One finding per clash (01.12 rule 1k): a scope's folders give one name more than once, no file of
- * them binds there, and the name does not fall through to a class further up. Named with its first
+ * them binds there (nor in the scopes below, which inherit it), it names every scope whose own folders
+ * give the clash, and the name does not fall through to a class further up. Named with its first
  * file, so the log line's wrench opens a class; its value lists every file, so a change in which
  * files clash logs the old clash resolved and the new one as fresh.
  */
 function duplicateFindings(plugin: FileclassPlugin): Finding[] {
-	return plugin.index.duplicateClasses().map(({ scope, name, paths }) => ({
-		fileClass: classRef(name, paths[0], scope),
+	return plugin.index.duplicateClasses().map(({ scopes, name, paths }) => ({
+		// A clash is always in a scope, so the ref is always `name @ path`, never a bare root name.
+		fileClass: classRef(name, paths[0], scopes[0]),
 		kind: "duplicate-class" as const,
 		level: "ERROR" as const,
 		value: paths.join(", "),
-		consequence: `no file of these binds for the notes of ${scope}, and the name does not fall through to a class further up`,
+		consequence: `no file of these binds for the notes of ${scopes.join(", ")} or of the scopes below, and the name does not fall through to a class further up`,
 	}));
 }
 
