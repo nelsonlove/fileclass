@@ -65,7 +65,7 @@ describe("the audit over scoped classes", () => {
 	});
 });
 
-describe("two files, one name, one scope (01.12 rule 1k)", () => {
+describe("two files, one name, one scope (ARCHITECTURE.md §10.3)", () => {
 	const DUP_A = "50 Dup/a/X.md";
 	const DUP_B = "50 Dup/b/X.md";
 	const SCOPE = "50 Dup/50 Dup.md";
@@ -84,7 +84,7 @@ describe("two files, one name, one scope (01.12 rule 1k)", () => {
 		expect(found[0].fileClass).toBe(`X @ ${DUP_A}`);
 		const ref = parseClassRef(found[0].fileClass);
 		expect(ref.path && index.isFileClassNote(ref.path)).toBe(true);
-		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B}`);
+		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B} in ${SCOPE}`);
 		expect(found[0].consequence).toContain(SCOPE);
 	});
 
@@ -94,7 +94,7 @@ describe("two files, one name, one scope (01.12 rule 1k)", () => {
 		files[SCOPE] = { ...files[SCOPE], classes: ["50 Dup/a", "50 Dup/b", "50 Dup/c"] };
 		const found = dups(files);
 		expect(found).toHaveLength(1);
-		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B}, 50 Dup/c/X.md`);
+		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B}, 50 Dup/c/X.md in ${SCOPE}`);
 	});
 
 	it("a child scope that inherits the clash does not report it again", () => {
@@ -134,6 +134,37 @@ describe("two files, one name, one scope (01.12 rule 1k)", () => {
 		const found = dups(files).find((f) => f.value.includes("60 Bor/c/X.md"));
 		expect(found?.consequence).toContain(BOR);
 		expect(found?.consequence).not.toContain(SCOPE);
+	});
+
+	it("a child that names some of its parent's clashing folders adds no second clash, and binds its own", () => {
+		const files = fixture();
+		files["50 Dup/c/X.md"] = { type: "Meta/Fileclass" };
+		files[SCOPE] = { ...files[SCOPE], classes: ["50 Dup/a", "50 Dup/b", "50 Dup/c"] };
+		files["50 Dup/55 Sub/55 Sub.md"] = { type: "Meta/Scope/Category", up: "[[50 Dup]]", classes: ["50 Dup/a"] };
+		files["50 Dup/55 Sub/y.md"] = { type: "X" };
+		const { index, file } = indexOver(files, { enableScopedClasses: true });
+		// The child's chain reads b and c in its parent's layer: a subset of the parent's clash, not a new one.
+		expect(index.duplicateClasses()).toEqual([{ scopes: [SCOPE], name: "X", paths: [DUP_A, DUP_B, "50 Dup/c/X.md"] }]);
+		expect(index.getFileClasses(file("50 Dup/55 Sub/y.md"))).toEqual(["X"]);
+		expect(index.getFileClasses(file("50 Dup/x.md"))).toEqual([]);
+		expect(index.errors.filter((e) => /more than once/.test(e))).toHaveLength(1);
+		const found = dups(files);
+		expect(found).toHaveLength(1);
+		expect(found[0].consequence).toContain("unless a nearer scope gives the name");
+	});
+
+	it("a scope that starts giving the clash too logs it again, naming both", () => {
+		const logged = (fs: ReturnType<typeof dups>) =>
+			fs.map((f) => ({ event: `schema.${f.kind}`, details: { fingerprint: fingerprint(f) } }));
+		const before = dups(fixture());
+		const files = fixture();
+		files["60 Two/60 Two.md"] = { type: "Meta/Scope/Category", classes: ["50 Dup/a", "50 Dup/b"] };
+		const after = dups(files);
+		expect(after).toHaveLength(1);
+		expect(after[0].value).toBe(`${DUP_A}, ${DUP_B} in ${SCOPE}, 60 Two/60 Two.md`);
+		const diff = diffFindings(logged(before), after);
+		expect(diff.fresh).toEqual(after);
+		expect(diff.resolved).toEqual([fingerprint(before[0])]);
 	});
 
 	it("paths sort by code unit, whatever the locale would say", () => {

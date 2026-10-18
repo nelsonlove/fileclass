@@ -77,8 +77,8 @@ export interface ClassEntry {
 export interface DuplicateClass {
 	/**
 	 * Every scope note whose own classes folders give the name more than once, sorted: the scopes
-	 * whose notes break (and the scopes below them, which inherit the clash). Not the owner of the
-	 * folders, which may be another scope whose own layer does not clash.
+	 * whose notes break, with the scopes below them unless a nearer scope gives the name. Not the
+	 * owner of the folders, which may be another scope that does not give the clash.
 	 */
 	scopes: string[];
 	name: string;
@@ -132,7 +132,7 @@ export class FileclassIndex extends Events {
 	 */
 	private bookmarkGroupsByPath = new Map<string, string[]>();
 	/**
-	 * Name + its files → one clash (01.12 rule 1k): a scope's folders give the name more than once.
+	 * Name + its files → one clash (ARCHITECTURE.md §10.3): a scope's folders give the name more than once.
 	 * Kept apart from `errors` so the audit can log it as a finding, once per clash however many
 	 * chains or scope notes share the folders.
 	 */
@@ -335,24 +335,33 @@ export class FileclassIndex extends Events {
 				folders.forEach((f) => visited.add(f));
 				if (!folders.length) continue;
 				const layer: Layer = new Map();
-				// Only the names that clash get a set, so a layer without a clash allocates nothing more.
-				const clashing = new Map<string, Set<string>>();
 				for (const folder of folders) {
 					for (const [name, path] of classesInFolder.get(folder) ?? []) {
 						const known = layer.get(name);
 						if (known === undefined) layer.set(name, path);
-						else if (known === null) clashing.get(name)?.add(path);
-						else if (known !== path) {
-							layer.set(name, null);
-							clashing.set(name, new Set([known, path]));
-						}
+						else if (known !== path) layer.set(name, null);
 					}
 				}
-				for (const [name, paths] of clashing) this.noteDuplicate(scope, name, paths);
 				layers.push(layer);
 			}
 			layers.push(this.layersByScope.get(ROOT)?.[0] ?? new Map());
 			this.layersByScope.set(note, layers);
+		}
+		// Clashes, once per scope note over all its own folders. Not from the chain layers above: a
+		// layer there leaves out the folders a nearer scope already read, so it would see a subset of
+		// a clash as a clash of its own. Any clash such a layer holds is a subset of one found here.
+		for (const note of scopeNotes) {
+			const first = new Map<string, string>();
+			// Only a name that clashes gets a set, so a scope without a clash allocates nothing more.
+			const clashing = new Map<string, Set<string>>();
+			for (const folder of ownFolders.get(note) ?? []) {
+				for (const [name, path] of classesInFolder.get(folder) ?? []) {
+					const known = first.get(name);
+					if (known === undefined) first.set(name, path);
+					else if (known !== path) clashing.set(name, (clashing.get(name) ?? new Set([known])).add(path));
+				}
+			}
+			for (const [name, paths] of clashing) this.noteDuplicate(note, name, paths);
 		}
 		// One line per clash, from the same record the audit logs, so the two never disagree.
 		for (const { scopes, name, paths } of this.duplicateClasses()) {
@@ -389,7 +398,7 @@ export class FileclassIndex extends Events {
 	}
 
 	/**
-	 * Records one clash in the layer of `scope`, keyed by its name and its files, so a clash many
+	 * Records one clash that `scope`'s own folders give, keyed by its name and its files, so a clash many
 	 * chains or scope notes see is one, naming every scope whose own layer gives it.
 	 */
 	private noteDuplicate(scope: string, name: string, paths: Set<string>): void {
@@ -401,7 +410,7 @@ export class FileclassIndex extends Events {
 	}
 
 	/**
-	 * Every name a scope gives twice or more, once per set of files, in a stable order (01.12 rule 1k).
+	 * Every name a scope gives twice or more, once per set of files, in a stable order (ARCHITECTURE.md §10.3).
 	 * Empty with scoped classes off: the root's classes folder cannot give a name twice.
 	 */
 	duplicateClasses(): DuplicateClass[] {
