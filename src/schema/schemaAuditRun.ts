@@ -106,12 +106,19 @@ function world(plugin: FileclassPlugin, classPath: string, name: string, scope: 
 function duplicateFindings(plugin: FileclassPlugin): Finding[] {
 	return plugin.index.duplicateClasses().map(({ scopes, name, paths }) => ({
 		// A clash is always in a scope, so the ref is always `name @ path`, never a bare root name.
-		fileClass: classRef(name, paths[0], scopes[0]),
+		// The file named is one a scope of the clash owns, so the label points into that scope and two
+		// clashes that share a borrowed file are told apart.
+		fileClass: classRef(name, labelPath(plugin, scopes, paths), scopes[0]),
 		kind: "duplicate-class" as const,
 		level: "ERROR" as const,
 		value: `${paths.join(", ")} in ${scopes.join(", ")}`,
 		consequence: `no file of these binds for the notes of ${scopes.join(", ")}, nor below unless a nearer scope gives the name, and the name does not fall through to a class further up`,
 	}));
+}
+
+/** The first file of a clash that one of its scopes owns, else its first file. */
+function labelPath(plugin: FileclassPlugin, scopes: readonly string[], paths: readonly string[]): string {
+	return paths.find((p) => scopes.includes(plugin.index.scopeOfClassFile(p) ?? "")) ?? paths[0];
 }
 
 /** Every problem the vault's schemas have right now. */

@@ -335,33 +335,29 @@ export class FileclassIndex extends Events {
 				folders.forEach((f) => visited.add(f));
 				if (!folders.length) continue;
 				const layer: Layer = new Map();
+				// The chain starts with the note itself, and nothing is visited yet, so its first layer
+				// is all its own folders: the one place a clash is recorded. A later layer leaves out
+				// the folders a nearer scope read, so a clash there would be a subset of a real one.
+				const own = scope === note;
+				// Only a name that clashes gets a set, so a scope without a clash allocates nothing more.
+				const clashing = new Map<string, Set<string>>();
 				for (const folder of folders) {
 					for (const [name, path] of classesInFolder.get(folder) ?? []) {
 						const known = layer.get(name);
 						if (known === undefined) layer.set(name, path);
-						else if (known !== path) layer.set(name, null);
+						else if (known === null) {
+							if (own) clashing.get(name)?.add(path);
+						} else if (known !== path) {
+							layer.set(name, null);
+							if (own) clashing.set(name, new Set([known, path]));
+						}
 					}
 				}
+				for (const [name, paths] of clashing) this.noteDuplicate(note, name, paths);
 				layers.push(layer);
 			}
 			layers.push(this.layersByScope.get(ROOT)?.[0] ?? new Map());
 			this.layersByScope.set(note, layers);
-		}
-		// Clashes, once per scope note over all its own folders. Not from the chain layers above: a
-		// layer there leaves out the folders a nearer scope already read, so it would see a subset of
-		// a clash as a clash of its own. Any clash such a layer holds is a subset of one found here.
-		for (const note of scopeNotes) {
-			const first = new Map<string, string>();
-			// Only a name that clashes gets a set, so a scope without a clash allocates nothing more.
-			const clashing = new Map<string, Set<string>>();
-			for (const folder of ownFolders.get(note) ?? []) {
-				for (const [name, path] of classesInFolder.get(folder) ?? []) {
-					const known = first.get(name);
-					if (known === undefined) first.set(name, path);
-					else if (known !== path) clashing.set(name, (clashing.get(name) ?? new Set([known])).add(path));
-				}
-			}
-			for (const [name, paths] of clashing) this.noteDuplicate(note, name, paths);
 		}
 		// One line per clash, from the same record the audit logs, so the two never disagree.
 		for (const { scopes, name, paths } of this.duplicateClasses()) {
@@ -698,8 +694,17 @@ export class FileclassIndex extends Events {
 		);
 	}
 
-	/** The class file a name means from a context, or undefined. */
+	/**
+	 * The class file a name means from a context, or undefined. A class file asked for its own name
+	 * is itself (§10.3: a class reads its own definition), even where its scope's lookup gives
+	 * nothing because the scope gives the name twice: the log's wrench and the schema editor open
+	 * such a file through it.
+	 */
 	resolveClass(name: string, ctx?: ClassContext): string | undefined {
+		if (this.scoped && ctx !== undefined) {
+			const path = ctx instanceof TFile ? ctx.path : normaliseFolder(ctx);
+			if (this.scopeOfClass.get(path) !== ROOT && this.nameByPath.get(path) === name) return path;
+		}
 		return this.lookup(this.scopeOf(ctx), name);
 	}
 

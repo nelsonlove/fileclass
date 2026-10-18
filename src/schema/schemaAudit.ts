@@ -196,10 +196,13 @@ export function findingLabel(f: Finding): string {
 /** One line summarising a sweep, for the notice that follows it. */
 export function describeAudit(findings: readonly Finding[]): string {
 	if (!findings.length) return "Fileclass: every fileClass points at something that exists.";
-	const errors = findings.filter((f) => f.level === "ERROR").length;
-	const warnings = findings.length - errors;
+	// A name one scope gives twice is an ERROR but not a reference, so it is counted on its own.
+	const twice = findings.filter((f) => f.kind === "duplicate-class").length;
+	const errors = findings.filter((f) => f.level === "ERROR").length - twice;
+	const warnings = findings.length - errors - twice;
 	const parts = [
 		errors ? `${errors} broken reference${errors > 1 ? "s" : ""}` : "",
+		twice ? `${twice} class name${twice > 1 ? "s" : ""} given twice in one scope` : "",
 		warnings ? `${warnings} that will never bind` : "",
 	].filter(Boolean);
 	return `Fileclass: ${parts.join(", ")} — see the schema log.`;

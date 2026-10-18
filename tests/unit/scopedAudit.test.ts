@@ -84,6 +84,13 @@ describe("two files, one name, one scope (ARCHITECTURE.md §10.3)", () => {
 		expect(found[0].fileClass).toBe(`X @ ${DUP_A}`);
 		const ref = parseClassRef(found[0].fileClass);
 		expect(ref.path && index.isFileClassNote(ref.path)).toBe(true);
+		// What the wrench and the schema editor call: each file of the clash opens as itself.
+		for (const p of [DUP_A, DUP_B]) {
+			expect(index.getFileClassFile("X", p)?.path).toBe(p);
+			expect(index.getFileClass("X", p)).toBe(index.getFileClassByPath(p));
+		}
+		// A note of the scope still binds neither.
+		expect(index.resolveClass("X", "50 Dup/x.md")).toBeUndefined();
 		expect(found[0].value).toBe(`${DUP_A}, ${DUP_B} in ${SCOPE}`);
 		expect(found[0].consequence).toContain(SCOPE);
 	});
@@ -134,6 +141,9 @@ describe("two files, one name, one scope (ARCHITECTURE.md §10.3)", () => {
 		const found = dups(files).find((f) => f.value.includes("60 Bor/c/X.md"));
 		expect(found?.consequence).toContain(BOR);
 		expect(found?.consequence).not.toContain(SCOPE);
+		// Labelled with the file 60 Bor owns, not the borrowed one, so it differs from 50 Dup's own clash.
+		expect(found?.fileClass).toBe("X @ 60 Bor/c/X.md");
+		expect(index.getFileClassFile("X", "60 Bor/c/X.md")?.path).toBe("60 Bor/c/X.md");
 	});
 
 	it("a child that names some of its parent's clashing folders adds no second clash, and binds its own", () => {
