@@ -39,7 +39,11 @@ interface AuditedEntry {
  */
 function auditedClasses(plugin: FileclassPlugin): AuditedEntry[] {
 	const out: AuditedEntry[] = [];
-	const entries = plugin.index.allClasses();
+	// The classes a clash names bind nothing, but each is still a definition with its own paths to
+	// check: the clash ends, and what it hid would otherwise surface only then.
+	const listed = plugin.index.allClasses();
+	const seen = new Set(listed.map((e) => e.path));
+	const entries = [...listed, ...plugin.index.clashingClasses().filter((e) => !seen.has(e.path))];
 	// The root's first, in the index's own order: a vault with no scopes reports as it always did.
 	const ordered = [...entries.filter((e) => e.scope === ""), ...entries.filter((e) => e.scope !== "")];
 	for (const { name, path, scope } of ordered) {
@@ -128,7 +132,11 @@ export function auditSchemas(plugin: FileclassPlugin): Finding[] {
 
 function classFindings(plugin: FileclassPlugin): Finding[] {
 	return auditedClasses(plugin).flatMap(({ cls, path, scope }) => {
-		const findings = auditClass(cls, world(plugin, path, cls.name, scope));
+		// A parent missing only because its nearest scope gives the name twice has one cause, the
+		// clash, and the clash is logged on its own: a second ERROR here would log it twice.
+		const findings = auditClass(cls, world(plugin, path, cls.name, scope)).filter(
+			(f) => !(f.kind === "missing-parent" && plugin.index.parentClashes(f.value, path))
+		);
 		// A scoped class is named with its file, so two classes of one name are two problems in the
 		// log, each logged and resolved on its own (§10.3). A root class keeps its bare name.
 		const ref = classRef(cls.name, path, scope);

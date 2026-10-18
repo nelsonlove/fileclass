@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import type FileclassPlugin from "../../main";
-import { classRef, parseClassRef } from "../../src/schema/classRef";
+import { classRef, parseClassRef, wrenchTarget } from "../../src/schema/classRef";
 import { diffFindings, fingerprint } from "../../src/schema/schemaAudit";
 import { auditSchemas } from "../../src/schema/schemaAuditRun";
 import { fixture, indexOver } from "./scopedFixture";
@@ -84,10 +84,11 @@ describe("two files, one name, one scope (ARCHITECTURE.md §10.3)", () => {
 		expect(found[0].fileClass).toBe(`X @ ${DUP_A}`);
 		const ref = parseClassRef(found[0].fileClass);
 		expect(ref.path && index.isFileClassNote(ref.path)).toBe(true);
-		// What the wrench and the schema editor call: each file of the clash opens as itself.
+		// The wrench opens each file of the clash itself; no shared accessor reaches it.
 		for (const p of [DUP_A, DUP_B]) {
-			expect(index.getFileClassFile("X", p)?.path).toBe(p);
-			expect(index.getFileClass("X", p)).toBe(index.getFileClassByPath(p));
+			expect(wrenchTarget(index, `X @ ${p}`)).toEqual({ open: "file", path: p });
+			expect(index.getFileClassFile("X", p)).toBeNull();
+			expect(index.getFileClass("X", p)).toBeUndefined();
 		}
 		// A note of the scope still binds neither.
 		expect(index.resolveClass("X", "50 Dup/x.md")).toBeUndefined();
@@ -143,7 +144,51 @@ describe("two files, one name, one scope (ARCHITECTURE.md §10.3)", () => {
 		expect(found?.consequence).not.toContain(SCOPE);
 		// Labelled with the file 60 Bor owns, not the borrowed one, so it differs from 50 Dup's own clash.
 		expect(found?.fileClass).toBe("X @ 60 Bor/c/X.md");
-		expect(index.getFileClassFile("X", "60 Bor/c/X.md")?.path).toBe("60 Bor/c/X.md");
+		expect(wrenchTarget(index, "X @ 60 Bor/c/X.md")).toEqual({ open: "file", path: "60 Bor/c/X.md" });
+	});
+
+	it("the accessors agree on a clashing class: none reaches it, none lists it", () => {
+		const { index } = indexOver(fixture(), { enableScopedClasses: true });
+		for (const ctx of [DUP_A, DUP_B, SCOPE, "50 Dup/x.md"]) {
+			expect(index.resolveClass("X", ctx)).toBeUndefined();
+			expect(index.getFileClass("X", ctx)).toBeUndefined();
+			expect(index.getResolvedFields("X", ctx)).toEqual([]);
+			expect(index.fileClassNamesFor(ctx)).not.toContain("X");
+		}
+		expect(index.allClasses().some((c) => c.name === "X")).toBe(false);
+		expect(index.clashingClasses().map((c) => c.path)).toEqual([DUP_A, DUP_B]);
+	});
+
+	it("the wrench opens the schema editor for a class that binds, and says gone for a missing file", () => {
+		const { index } = indexOver(fixture(), { enableScopedClasses: true });
+		expect(wrenchTarget(index, `Event/Session @ ${SCOPED_SESSION}`)).toEqual({
+			open: "schema",
+			name: "Event/Session",
+			path: SCOPED_SESSION,
+		});
+		expect(wrenchTarget(index, "Event/Session")).toEqual({ open: "schema", name: "Event/Session" });
+		expect(wrenchTarget(index, "X @ 50 Dup/gone/X.md")).toEqual({ open: "gone" });
+		// A file that is a class of another name is not opened under this one.
+		expect(wrenchTarget(index, `Y @ ${DUP_A}`)).toEqual({ open: "gone" });
+	});
+
+	it("a class extending the clashing name logs the clash once, not also a missing parent", () => {
+		const files = fixture();
+		files["50 Dup/c/Child.md"] = { type: "Meta/Fileclass", extends: "X" };
+		files[SCOPE] = { ...files[SCOPE], classes: ["50 Dup/a", "50 Dup/b", "50 Dup/c"] };
+		const found = audit(files);
+		expect(found.filter((f) => f.kind === "duplicate-class")).toHaveLength(1);
+		expect(found.some((f) => f.kind === "missing-parent" && f.value === "X")).toBe(false);
+		// A parent that is truly missing is still logged.
+		files["50 Dup/c/Child.md"] = { type: "Meta/Fileclass", extends: "Nowhere" };
+		expect(audit(files).some((f) => f.kind === "missing-parent" && f.value === "Nowhere")).toBe(true);
+	});
+
+	it("the files of a clash are still audited for their own problems", () => {
+		const files = fixture();
+		files[DUP_B] = { ...files[DUP_B], baseFile: "Gone/x.base" };
+		const found = audit(files).filter((f) => f.value === "Gone/x.base");
+		expect(found.map((f) => f.fileClass)).toEqual([`X @ ${DUP_B}`]);
 	});
 
 	it("a child that names some of its parent's clashing folders adds no second clash, and binds its own", () => {

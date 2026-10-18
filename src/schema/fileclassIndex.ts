@@ -415,6 +415,20 @@ export class FileclassIndex extends Events {
 			.sort((a, b) => byCodeUnit(a.name, b.name) || byCodeUnit(a.paths.join("\u0000"), b.paths.join("\u0000")));
 	}
 
+	/**
+	 * Every class file a clash names, with its name and the scope that owns the file: none of them
+	 * binds, so `allClasses` leaves them out, but each is still a class whose own definition the audit
+	 * reads (ARCHITECTURE.md §10.3). Sorted by path, each file once.
+	 */
+	clashingClasses(): ClassEntry[] {
+		const paths = new Set<string>();
+		for (const { paths: ps } of this.duplicates.values()) ps.forEach((p) => paths.add(p));
+		return [...paths].sort(byCodeUnit).flatMap((path) => {
+			const name = this.nameByPath.get(path);
+			return name === undefined ? [] : [{ name, path, scope: this.scopeOfClass.get(path) ?? ROOT }];
+		});
+	}
+
 	/** The scoped classes folder a path sits in, if any. */
 	private scopedFolderOf(path: string): string | undefined {
 		for (let folder = parentFolder(path); folder; folder = parentFolder(folder)) {
@@ -694,17 +708,8 @@ export class FileclassIndex extends Events {
 		);
 	}
 
-	/**
-	 * The class file a name means from a context, or undefined. A class file asked for its own name
-	 * is itself (§10.3: a class reads its own definition), even where its scope's lookup gives
-	 * nothing because the scope gives the name twice: the log's wrench and the schema editor open
-	 * such a file through it.
-	 */
+	/** The class file a name means from a context, or undefined. */
 	resolveClass(name: string, ctx?: ClassContext): string | undefined {
-		if (this.scoped && ctx !== undefined) {
-			const path = ctx instanceof TFile ? ctx.path : normaliseFolder(ctx);
-			if (this.scopeOfClass.get(path) !== ROOT && this.nameByPath.get(path) === name) return path;
-		}
 		return this.lookup(this.scopeOf(ctx), name);
 	}
 
@@ -714,6 +719,20 @@ export class FileclassIndex extends Events {
 	 */
 	resolveParent(name: string, classPath: string): string | undefined {
 		return this.lookup(this.scopeOfClass.get(classPath) ?? ROOT, name, classPath);
+	}
+
+	/**
+	 * True when an `extends` name finds nothing for a class file because the nearest scope that
+	 * gives it gives it twice (§10.3): the cause is that clash, which the audit logs once on its own.
+	 */
+	parentClashes(name: string, classPath: string): boolean {
+		const layers = this.layersByScope.get(this.scopeOfClass.get(classPath) ?? ROOT) ?? [];
+		for (const layer of layers) {
+			const path = layer.get(name);
+			if (path === undefined || path === classPath) continue;
+			return path === null;
+		}
+		return false;
 	}
 
 	/** The root scope's class names. */

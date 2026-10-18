@@ -8,7 +8,7 @@ All notable changes to Fileclass are documented here. The format follows
 
 ### Added
 
-- **Two files for one class name in one scope are logged.** With scoped classes on, a scope whose classes folders give one name twice already bound neither file there (the name does not fall through to a class further up). The sweep now also writes it to the schema log as an `ERROR`, `schema.duplicate-class`, once per clash, named with its first file and listing every file and every scope note whose own folders give the name twice, and counts it in its notice as a class name given twice. The log's wrench opens the file: a class file asked for its own name now means itself, even where its scope gives the name twice. Nothing is thrown.
+- **Two files for one class name in one scope are logged.** With scoped classes on, a scope whose classes folders give one name twice already bound neither file there (the name does not fall through to a class further up). The sweep now also writes it to the schema log as an `ERROR`, `schema.duplicate-class`, once per clash, named with its first file and listing every file and every scope note whose own folders give the name twice, and counts it in its notice as a class name given twice. The log's wrench opens the file itself (no class lookup reaches a class that binds nothing, so the schema editor is not offered). The files of a clash are still audited for their own problems, and a class that `extends` the clashing name gets no second, missing-parent `ERROR` for the same cause. Nothing is thrown.
 
 ## [0.2.15] - 2026-08-17
 
