@@ -19,3 +19,32 @@ export function parseClassRef(ref: string): { name: string; path?: string } {
 	if (i < 0 || !ref.slice(i + SEP.length).endsWith(".md")) return { name: ref };
 	return { name: ref.slice(0, i), path: ref.slice(i + SEP.length) };
 }
+
+/** What the index must answer for the log's wrench to choose. */
+export interface WrenchIndex {
+	isFileClassNote(path: string): boolean;
+	fileClassNameOfNote(path: string): string | undefined;
+	resolveClass(name: string, ctx?: string): string | undefined;
+	getFileClassFile(name: string, ctx?: string): unknown;
+}
+
+/**
+ * Where a log line's wrench goes: the schema editor for a class the name reaches; the class file
+ * itself for a class its scope gives twice, which binds nothing and so no lookup reaches (§10.3);
+ * nothing for a class that is gone. The file is opened, not the editor, so no shared accessor has to
+ * make an exception for a class that does not bind.
+ */
+export function wrenchTarget(
+	index: WrenchIndex,
+	ref: string
+): { open: "schema"; name: string; path?: string } | { open: "file"; path: string } | { open: "gone" } {
+	const { name, path } = parseClassRef(ref);
+	// A scoped line whose class file is gone says so: read from a missing path, the name would fall
+	// back to the root's class of the same name.
+	if (path !== undefined && !index.isFileClassNote(path)) return { open: "gone" };
+	if (index.getFileClassFile(name, path)) return { open: "schema", name, path };
+	if (path !== undefined && index.resolveClass(name, path) === undefined && index.fileClassNameOfNote(path) === name) {
+		return { open: "file", path };
+	}
+	return { open: "gone" };
+}

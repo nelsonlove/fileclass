@@ -166,6 +166,15 @@ describe("how findings are named and counted", () => {
 			"Fileclass: 2 broken references, 1 that will never bind — see the schema log."
 		);
 	});
+
+	it("counts a class name given twice apart from a broken reference", () => {
+		const dup = { fileClass: "X @ a/X.md", kind: "duplicate-class" as const, level: "ERROR" as const, value: "", consequence: "" };
+		const broken = { ...dup, fileClass: "Book", kind: "missing-path" as const };
+		expect(describeAudit([dup])).toBe("Fileclass: 1 class name given twice in one scope — see the schema log.");
+		expect(describeAudit([broken, dup, dup])).toBe(
+			"Fileclass: 1 broken reference, 2 class names given twice in one scope — see the schema log."
+		);
+	});
 });
 
 describe("a sweep only writes what changed", () => {

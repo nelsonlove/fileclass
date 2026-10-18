@@ -73,6 +73,24 @@ export interface ClassEntry {
 	scope: string;
 }
 
+/** One name that one scope's classes folders give more than once: it binds nothing there. */
+export interface DuplicateClass {
+	/**
+	 * Every scope note whose own classes folders give the name more than once, sorted: the scopes
+	 * whose notes break, with the scopes below them unless a nearer scope gives the name. Not the
+	 * owner of the folders, which may be another scope that does not give the clash.
+	 */
+	scopes: string[];
+	name: string;
+	/** Every file that gives the name, sorted by code unit. */
+	paths: string[];
+}
+
+/** Code-unit order: the same on every machine, so a fingerprint built from it does not move with the locale. */
+function byCodeUnit(x: string, y: string): number {
+	return x < y ? -1 : x > y ? 1 : 0;
+}
+
 /** The binding maps the pure resolver reads, for one scope. */
 interface Bindings {
 	tagBindings: Map<string, string>;
@@ -113,6 +131,12 @@ export class FileclassIndex extends Events {
 	 * a bookmark group claimed nothing at all (#121's take found it).
 	 */
 	private bookmarkGroupsByPath = new Map<string, string[]>();
+	/**
+	 * Name + its files → one clash (ARCHITECTURE.md §10.3): a scope's folders give the name more than once.
+	 * Kept apart from `errors` so the audit can log it as a finding, once per clash however many
+	 * chains or scope notes share the folders.
+	 */
+	private duplicates = new Map<string, { name: string; paths: string[]; scopes: Set<string> }>();
 	/** Aggregated non-fatal parse problems from the last rebuild. */
 	errors: string[] = [];
 
@@ -176,6 +200,7 @@ export class FileclassIndex extends Events {
 		this.foldersByScope.clear();
 		this.folderScope.clear();
 		this.bookmarkGroupsByPath.clear();
+		this.duplicates.clear();
 		this.errors = [];
 	}
 
@@ -310,20 +335,33 @@ export class FileclassIndex extends Events {
 				folders.forEach((f) => visited.add(f));
 				if (!folders.length) continue;
 				const layer: Layer = new Map();
+				// The chain starts with the note itself, and nothing is visited yet, so its first layer
+				// is all its own folders: the one place a clash is recorded. A later layer leaves out
+				// the folders a nearer scope read, so a clash there would be a subset of a real one.
+				const own = scope === note;
+				// Only a name that clashes gets a set, so a scope without a clash allocates nothing more.
+				const clashing = new Map<string, Set<string>>();
 				for (const folder of folders) {
 					for (const [name, path] of classesInFolder.get(folder) ?? []) {
 						const known = layer.get(name);
 						if (known === undefined) layer.set(name, path);
-						else if (known !== path) {
+						else if (known === null) {
+							if (own) clashing.get(name)?.add(path);
+						} else if (known !== path) {
 							layer.set(name, null);
-							errors.add(`Scope ${scope} gives the class ${name} twice (${known ?? "an earlier file"} and ${path}); neither binds.`);
+							if (own) clashing.set(name, new Set([known, path]));
 						}
 					}
 				}
+				for (const [name, paths] of clashing) this.noteDuplicate(note, name, paths);
 				layers.push(layer);
 			}
 			layers.push(this.layersByScope.get(ROOT)?.[0] ?? new Map());
 			this.layersByScope.set(note, layers);
+		}
+		// One line per clash, from the same record the audit logs, so the two never disagree.
+		for (const { scopes, name, paths } of this.duplicateClasses()) {
+			errors.add(`${scopes.join(", ")} ${scopes.length > 1 ? "give" : "gives"} the class ${name} more than once (${paths.join(", ")}); none binds.`);
 		}
 
 		// Index each scoped class once, under the deepest owner whose folder holds the classes
@@ -353,6 +391,42 @@ export class FileclassIndex extends Events {
 			}
 		}
 		this.errors.push(...errors);
+	}
+
+	/**
+	 * Records one clash that `scope`'s own folders give, keyed by its name and its files, so a clash many
+	 * chains or scope notes see is one, naming every scope whose own layer gives it.
+	 */
+	private noteDuplicate(scope: string, name: string, paths: Set<string>): void {
+		const sorted = [...paths].sort(byCodeUnit);
+		const key = `${name}\u0000${sorted.join("\u0000")}`;
+		const known = this.duplicates.get(key);
+		if (known) known.scopes.add(scope);
+		else this.duplicates.set(key, { name, paths: sorted, scopes: new Set([scope]) });
+	}
+
+	/**
+	 * Every name a scope gives twice or more, once per set of files, in a stable order (ARCHITECTURE.md §10.3).
+	 * Empty with scoped classes off: the root's classes folder cannot give a name twice.
+	 */
+	duplicateClasses(): DuplicateClass[] {
+		return [...this.duplicates.values()]
+			.map(({ name, paths, scopes }) => ({ scopes: [...scopes].sort(byCodeUnit), name, paths: [...paths] }))
+			.sort((a, b) => byCodeUnit(a.name, b.name) || byCodeUnit(a.paths.join("\u0000"), b.paths.join("\u0000")));
+	}
+
+	/**
+	 * Every class file a clash names, with its name and the scope that owns the file: none of them
+	 * binds, so `allClasses` leaves them out, but each is still a class whose own definition the audit
+	 * reads (ARCHITECTURE.md §10.3). Sorted by path, each file once.
+	 */
+	clashingClasses(): ClassEntry[] {
+		const paths = new Set<string>();
+		for (const { paths: ps } of this.duplicates.values()) ps.forEach((p) => paths.add(p));
+		return [...paths].sort(byCodeUnit).flatMap((path) => {
+			const name = this.nameByPath.get(path);
+			return name === undefined ? [] : [{ name, path, scope: this.scopeOfClass.get(path) ?? ROOT }];
+		});
 	}
 
 	/** The scoped classes folder a path sits in, if any. */
@@ -645,6 +719,20 @@ export class FileclassIndex extends Events {
 	 */
 	resolveParent(name: string, classPath: string): string | undefined {
 		return this.lookup(this.scopeOfClass.get(classPath) ?? ROOT, name, classPath);
+	}
+
+	/**
+	 * True when an `extends` name finds nothing for a class file because the nearest scope that
+	 * gives it gives it twice (§10.3): the cause is that clash, which the audit logs once on its own.
+	 */
+	parentClashes(name: string, classPath: string): boolean {
+		const layers = this.layersByScope.get(this.scopeOfClass.get(classPath) ?? ROOT) ?? [];
+		for (const layer of layers) {
+			const path = layer.get(name);
+			if (path === undefined || path === classPath) continue;
+			return path === null;
+		}
+		return false;
 	}
 
 	/** The root scope's class names. */

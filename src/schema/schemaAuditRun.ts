@@ -39,7 +39,11 @@ interface AuditedEntry {
  */
 function auditedClasses(plugin: FileclassPlugin): AuditedEntry[] {
 	const out: AuditedEntry[] = [];
-	const entries = plugin.index.allClasses();
+	// The classes a clash names bind nothing, but each is still a definition with its own paths to
+	// check: the clash ends, and what it hid would otherwise surface only then.
+	const listed = plugin.index.allClasses();
+	const seen = new Set(listed.map((e) => e.path));
+	const entries = [...listed, ...plugin.index.clashingClasses().filter((e) => !seen.has(e.path))];
 	// The root's first, in the index's own order: a vault with no scopes reports as it always did.
 	const ordered = [...entries.filter((e) => e.scope === ""), ...entries.filter((e) => e.scope !== "")];
 	for (const { name, path, scope } of ordered) {
@@ -96,10 +100,43 @@ function world(plugin: FileclassPlugin, classPath: string, name: string, scope: 
 	};
 }
 
+/**
+ * One finding per clash (ARCHITECTURE.md §10.3): a scope's folders give one name more than once, no
+ * file of them binds there (nor below it, unless a nearer scope gives the name), and the name does
+ * not fall through to a class further up. Named with its first file, so the log line's wrench opens a
+ * class; its value lists every file and every scope whose own folders give the clash, so a change in
+ * either logs the old clash resolved and the new one as fresh.
+ */
+function duplicateFindings(plugin: FileclassPlugin): Finding[] {
+	return plugin.index.duplicateClasses().map(({ scopes, name, paths }) => ({
+		// A clash is always in a scope, so the ref is always `name @ path`, never a bare root name.
+		// The file named is one a scope of the clash owns, so the label points into that scope and two
+		// clashes that share a borrowed file are told apart.
+		fileClass: classRef(name, labelPath(plugin, scopes, paths), scopes[0]),
+		kind: "duplicate-class" as const,
+		level: "ERROR" as const,
+		value: `${paths.join(", ")} in ${scopes.join(", ")}`,
+		consequence: `no file of these binds for the notes of ${scopes.join(", ")}, nor below unless a nearer scope gives the name, and the name does not fall through to a class further up`,
+	}));
+}
+
+/** The first file of a clash that one of its scopes owns, else its first file. */
+function labelPath(plugin: FileclassPlugin, scopes: readonly string[], paths: readonly string[]): string {
+	return paths.find((p) => scopes.includes(plugin.index.scopeOfClassFile(p) ?? "")) ?? paths[0];
+}
+
 /** Every problem the vault's schemas have right now. */
 export function auditSchemas(plugin: FileclassPlugin): Finding[] {
+	return [...classFindings(plugin), ...duplicateFindings(plugin)];
+}
+
+function classFindings(plugin: FileclassPlugin): Finding[] {
 	return auditedClasses(plugin).flatMap(({ cls, path, scope }) => {
-		const findings = auditClass(cls, world(plugin, path, cls.name, scope));
+		// A parent missing only because its nearest scope gives the name twice has one cause, the
+		// clash, and the clash is logged on its own: a second ERROR here would log it twice.
+		const findings = auditClass(cls, world(plugin, path, cls.name, scope)).filter(
+			(f) => !(f.kind === "missing-parent" && plugin.index.parentClashes(f.value, path))
+		);
 		// A scoped class is named with its file, so two classes of one name are two problems in the
 		// log, each logged and resolved on its own (§10.3). A root class keeps its bare name.
 		const ref = classRef(cls.name, path, scope);

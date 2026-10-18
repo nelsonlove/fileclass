@@ -57,7 +57,7 @@ Off by default. Turn on **Settings → Fileclass → Scoped classes** and a **sc
 
 **Shadowing.** A scope's class with the same name as one further up wins for the notes of that scope, and the index reports it (`Event/Visit in … shadows Event/Visit in …`). Such a class may `extends` the class it shadows: a class never extends itself, so its own name resolves further up. `extends` always resolves from the class's own scope upward, never sideways or down.
 
-**Two files, one name, one scope.** When a scope's folders give one name twice, neither binds in that scope (the name does not fall through to a parent's class), and the index reports it.
+**Two files, one name, one scope.** When a scope's folders give one name twice, neither binds in that scope (the name does not fall through to a parent's class), so a note there whose type names it reads as a plain note. The sweep below logs it as an `ERROR` line, `schema.duplicate-class`, once per clash, named with the first of its files that the scope owns (so the line's wrench opens that file) and listing every file and every scope note whose own folders give the name twice (its notes break, and so do those of the scopes below it, unless a nearer scope gives the name). When the set of files or of those scopes changes, the old clash is logged as resolved and the new one as an error; when one file is left, it is resolved. Each file of the clash is still checked for its own problems (a broken path, a missing parent), and a class that `extends` the clashing name is not logged again as a missing parent: the clash is the one cause.
 
 **Tags, folders and bookmarks.** A scoped class's `mapWithTag`, `tagNames`, `filesPaths` and `bookmarksGroups` claim only notes inside its scope, and inside it they win over a root class that claims the same tag, folder or group. Outside every scope, the root's classes claim what they always claimed.
 
@@ -448,7 +448,7 @@ Three levels, with a rule behind them:
 
 | Level | What it means |
 |-------|---------------|
-| **ERROR** | Fileclass cannot do what a definition told it: a path pointing at nothing, an `extends` naming a class the vault does not have. |
+| **ERROR** | Fileclass cannot do what a definition told it: a path pointing at nothing, an `extends` naming a class the vault does not have, one scope giving a class name twice. |
 | **WARNING** | A definition that will never do anything, silently: a tag that cannot bind, an `excludes` naming a field the parent never declared. |
 | **INFO** | A write Fileclass performed across files you did not have open: a rename migrated, a base synced, a canvas drawn. |
 

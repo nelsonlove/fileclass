@@ -74,7 +74,7 @@ describe("scoped classes on", () => {
 	it("a name given twice in one scope binds neither, and is reported", () => {
 		const { index, file } = indexOver(fixture(), on);
 		expect(index.getFileClasses(file("50 Dup/x.md"))).toEqual([]);
-		expect(index.errors.some((e) => /gives the class X twice/.test(e))).toBe(true);
+		expect(index.errors.some((e) => /50 Dup\/50 Dup\.md gives the class X more than once \(50 Dup\/a\/X\.md, 50 Dup\/b\/X\.md\); none binds/.test(e))).toBe(true);
 	});
 
 	it("the folder note of a classes folder is not a class; a stray is reported", () => {
